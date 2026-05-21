@@ -1,7 +1,9 @@
+import { memo } from "react";
+
 type Props = { para: string; title: string; chapter: string };
 
 /** Kariana 3-cell page header — narrow side cells, wide center, black double border. */
-export function SlimHeader({ para, title, chapter }: Props) {
+export const SlimHeader = memo(function SlimHeader({ para, title, chapter }: Props) {
   return (
     <div
       className="flex h-full w-full items-stretch bg-white text-[10.5px] font-semibold text-neutral-900"
@@ -29,4 +31,4 @@ export function SlimHeader({ para, title, chapter }: Props) {
       </div>
     </div>
   );
-}
+});
