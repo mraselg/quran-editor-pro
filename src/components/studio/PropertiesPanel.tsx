@@ -314,9 +314,10 @@ function DSlider({ k, label, min, max, fallback, color }: {
 
 function LocalFields({ color }: { color: string }) {
   const selection = useEditorStore((s) => s.selection);
-  const patchLocal = useOverridesStore((s) => s.patchLocal);
+  const scope = useEditorStore((s) => s.scope);
   const local = useOverridesStore((s) => selection ? s.local[selection.key] : undefined);
   if (!selection) return <div className="text-[10px] text-neutral-600 rounded bg-neutral-900/50 p-2 text-center">ট্রান্সফর্ম করার জন্য সারি নির্বাচন করুন</div>;
+  const apply = (patch: Record<string, unknown>) => { void patchScoped(selection.key, patch as never, scope); };
   return (
     <div className="grid grid-cols-2 gap-3">
       {(["dx", "dy"] as const).map((f) => (
@@ -324,13 +325,13 @@ function LocalFields({ color }: { color: string }) {
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-neutral-500" style={{ color }}>{f === "dx" ? "X অফসেট" : "Y অফসেট"}</span>
             {(local?.[f] ?? 0) !== 0 && (
-              <button onClick={() => patchLocal(selection.key, { [f]: undefined })} className="text-neutral-600 hover:text-amber-400">
+              <button onClick={() => apply({ [f]: undefined })} className="text-neutral-600 hover:text-amber-400">
                 <RotateCcw className="h-2.5 w-2.5" />
               </button>
             )}
           </div>
           <input type="number" value={local?.[f] ?? 0}
-            onChange={(e) => patchLocal(selection.key, { [f]: Number(e.target.value) || undefined })}
+            onChange={(e) => apply({ [f]: Number(e.target.value) || undefined })}
             className="w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-[11px] outline-none focus:border-amber-400"
             step={1} />
         </div>
