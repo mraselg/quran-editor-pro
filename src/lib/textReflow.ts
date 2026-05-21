@@ -4,80 +4,43 @@
  * Handles dynamic text reflow across rows and pages in editor mode.
  * When text is added/modified in a row, overflow cascades to subsequent rows
  * and across page boundaries.
+ *
+ * PERFORMANCE NOTE: All text measurement uses Canvas API (canvasMeasure.ts)
+ * instead of DOM-span offsetWidth to avoid Layout Thrashing.
  */
 
 import type { FabricLine } from "@/components/studio/FabricLines";
 import type { LocalOverride } from "@/state/overridesStore";
+import { measureTextWidthCanvas, splitToFitCanvas } from "./canvasMeasure";
 
 export type LayerKind = "arabic" | "bangla";
 
 /**
- * Splits text to fit within maxWidth pixels using DOM measurement.
- * Uses a hidden span for accurate measurement with the loaded web font.
+ * Measures the rendered pixel width of `text`.
+ * Uses Canvas API — no DOM reads, no Layout Thrashing.
+ *
+ * @deprecated Use measureTextWidthCanvas() from canvasMeasure.ts directly.
+ * This wrapper is kept for backwards-compatibility with any callers.
  */
-let measureSpan: HTMLSpanElement | null = null;
-
-function getMeasureSpan(): HTMLSpanElement {
-  if (!measureSpan || !document.body.contains(measureSpan)) {
-    measureSpan = document.createElement("span");
-    measureSpan.style.cssText = [
-      "position:absolute",
-      "visibility:hidden",
-      "white-space:nowrap",
-      "pointer-events:none",
-      "top:-9999px",
-      "left:-9999px",
-    ].join(";");
-    document.body.appendChild(measureSpan);
-  }
-  return measureSpan;
-}
-
 export function measureTextWidth(
   text: string,
   fontFamily: string,
-  fontSize: number
+  fontSize: number,
 ): number {
-  const span = getMeasureSpan();
-  span.style.fontFamily = fontFamily;
-  span.style.fontSize = `${fontSize}px`;
-  span.textContent = text;
-  return span.offsetWidth;
+  return measureTextWidthCanvas(text, fontFamily, fontSize);
 }
 
+/**
+ * Splits text to fit within maxWidth pixels using Canvas measurement.
+ * Replaces the previous DOM-span based implementation.
+ */
 export function splitToFit(
   text: string,
   maxWidth: number,
   fontFamily: string,
-  fontSize: number
+  fontSize: number,
 ): { fits: string; overflow: string } {
-  if (!text.trim()) return { fits: text, overflow: "" };
-
-  // First check if the whole text fits
-  if (measureTextWidth(text, fontFamily, fontSize) <= maxWidth) {
-    return { fits: text, overflow: "" };
-  }
-
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length <= 1) {
-    // Single word that doesn't fit — keep it anyway (no split possible)
-    return { fits: text, overflow: "" };
-  }
-
-  let fits = "";
-  for (let i = 0; i < words.length; i++) {
-    const candidate = fits ? fits + " " + words[i] : words[i];
-    if (measureTextWidth(candidate, fontFamily, fontSize) <= maxWidth) {
-      fits = candidate;
-    } else {
-      return {
-        fits,
-        overflow: words.slice(i).join(" "),
-      };
-    }
-  }
-
-  return { fits: text, overflow: "" };
+  return splitToFitCanvas(text, maxWidth, fontFamily, fontSize);
 }
 
 /**
@@ -90,7 +53,7 @@ export function getEffectiveText(
   layer: LayerKind,
   lines: FabricLine[],
   localMap: Record<string, LocalOverride>,
-  layerKeyFn: (pageId: string, rowIndex: number, layer: LayerKind) => string
+  layerKeyFn: (pageId: string, rowIndex: number, layer: LayerKind) => string,
 ): string {
   const lk = layerKeyFn(pageId, rowIndex, layer);
   const ov = localMap[lk];
@@ -118,6 +81,7 @@ export type ReflowOptions = {
 /**
  * Cascading reflow from a given row across the entire surah.
  * Accepts an overflow string and distributes it through subsequent rows/pages.
+ * Uses Canvas measurement — no DOM reads.
  */
 export function reflowFrom(opts: ReflowOptions): void {
   const {
@@ -156,11 +120,11 @@ export function reflowFrom(opts: ReflowOptions): void {
         ? overflow + " " + existingText
         : overflow;
 
-      const { fits, overflow: newOverflow } = splitToFit(
+      const { fits, overflow: newOverflow } = splitToFitCanvas(
         combined,
         availableWidth,
         fontFamily,
-        fontSize
+        fontSize,
       );
 
       patchLocal(lk, { text: fits });

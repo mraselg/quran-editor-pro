@@ -1,6 +1,9 @@
 import { ChevronDown, FileText, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { FixedSizeList } from "react-window";
+import type { ListChildComponentProps } from "react-window";
 import { useReflowStore } from "@/state/reflowStore";
+import type { PageDistribution } from "@/state/reflowStore";
 
 type Props = {
   pages?: unknown;
@@ -25,9 +28,70 @@ function bnNum(n: number | string): string {
   return String(n).replace(/\d/g, (d) => map[Number(d)]);
 }
 
+/** Height of each page list item — fixed for react-window FixedSizeList */
+const ITEM_HEIGHT = 52;
+
+/** Virtualized page list item — extracted for react-window row renderer */
+type ItemData = {
+  filtered: PageDistribution[];
+  distribution: PageDistribution[];
+  activeId: string;
+  onSelect: (id: string) => void;
+};
+
+function PageListItem({
+  index,
+  style,
+  data,
+}: ListChildComponentProps<ItemData>) {
+  const { filtered, distribution, activeId, onSelect } = data;
+  const d = filtered[index];
+  if (!d) return null;
+
+  const idx = distribution.indexOf(d);
+  const active = d.pageId === activeId;
+  const surahName = SURAH_NAMES[d.surah] ?? `সূরা ${bnNum(d.surah)}`;
+  const ayahLabel =
+    d.firstVerse != null && d.lastVerse != null
+      ? `আয়াত ${bnNum(d.firstVerse)}–${bnNum(d.lastVerse)}`
+      : `পেজ ${bnNum(d.pageNo)}`;
+
+  return (
+    <div style={style}>
+      <button
+        onClick={() => onSelect(d.pageId)}
+        className={`group flex w-full items-center gap-2.5 border-l-2 px-3 py-2 text-left text-xs transition-all ${
+          active
+            ? "border-amber-400 bg-gradient-to-r from-amber-500/10 to-transparent text-amber-100"
+            : "border-transparent text-neutral-400 hover:border-neutral-700 hover:bg-neutral-900/60 hover:text-neutral-200"
+        }`}
+        style={{ height: ITEM_HEIGHT }}
+      >
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold transition-colors ${
+            active ? "bg-amber-500 text-neutral-950" : "bg-neutral-800 text-neutral-500 group-hover:bg-neutral-700"
+          }`}
+        >
+          {idx + 1}
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate font-medium leading-tight">{surahName}</span>
+          <span className="truncate text-[10px] text-neutral-600 group-hover:text-neutral-500">
+            {ayahLabel}
+          </span>
+        </div>
+        {active && (
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+        )}
+      </button>
+    </div>
+  );
+}
+
 export function PageList({ activeId, onSelect }: Props) {
   const [q, setQ] = useState("");
   const distribution = useReflowStore((s) => s.distribution);
+  const listContainerRef = useRef<HTMLDivElement>(null);
 
   const surahOptions = useMemo(() => {
     const seen = new Map<number, string>();
@@ -51,6 +115,35 @@ export function PageList({ activeId, onSelect }: Props) {
 
   const activeIdx = distribution.findIndex((d) => d.pageId === activeId);
   const activeData = distribution[activeIdx];
+
+  // Scroll the virtualized list to active item when activeId changes.
+  const listRef = useRef<FixedSizeList>(null);
+  const prevActiveRef = useRef<string>("");
+  if (activeId !== prevActiveRef.current) {
+    prevActiveRef.current = activeId;
+    const activeFilteredIdx = filtered.findIndex((d) => d.pageId === activeId);
+    if (activeFilteredIdx >= 0) {
+      listRef.current?.scrollToItem(activeFilteredIdx, "smart");
+    }
+  }
+
+  const itemData = useMemo<ItemData>(
+    () => ({ filtered, distribution, activeId, onSelect }),
+    [filtered, distribution, activeId, onSelect],
+  );
+
+  // Compute list height from container — approximate using known header heights.
+  // Header: 40px + active indicator: ~66px + selectors: ~90px + search: ~40px = ~236px
+  // Use the remaining height. react-window needs a fixed pixel height.
+  const FIXED_HEADER_HEIGHT = 240;
+  // The overall sidebar height is set to 100% (h-full). We compute the list
+  // portion as total container - fixed header area.
+  // Since we can't know the exact height in SSR, we use a reasonable default.
+  const listHeight = typeof window !== "undefined"
+    ? Math.max(100, (window.innerHeight - 52 - FIXED_HEADER_HEIGHT)) // 52 = TopBar height
+    : 400;
+
+  const handleSelect = useCallback((id: string) => onSelect(id), [onSelect]);
 
   return (
     <aside className="flex h-full w-64 flex-col border-r border-neutral-800/80 bg-neutral-950 text-neutral-200">
@@ -101,7 +194,7 @@ export function PageList({ activeId, onSelect }: Props) {
           <div className="relative">
             <select
               value={activeId}
-              onChange={(e) => onSelect(e.target.value)}
+              onChange={(e) => handleSelect(e.target.value)}
               className="w-full appearance-none rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 pr-7 text-xs text-neutral-100 outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 transition-colors"
             >
               {distribution.map((d, i) => (
@@ -121,7 +214,7 @@ export function PageList({ activeId, onSelect }: Props) {
           <div className="relative">
             <select
               value=""
-              onChange={(e) => e.target.value && onSelect(e.target.value)}
+              onChange={(e) => e.target.value && handleSelect(e.target.value)}
               className="w-full appearance-none rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 pr-7 text-xs text-neutral-100 outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 transition-colors"
             >
               <option value="">— সূরা বাছুন —</option>
@@ -149,45 +242,26 @@ export function PageList({ activeId, onSelect }: Props) {
         </div>
       </div>
 
-      {/* Page List */}
-      <div className="flex-1 overflow-y-auto py-1 scrollbar-thin">
-        {filtered.map((d) => {
-          const idx = distribution.indexOf(d);
-          const active = d.pageId === activeId;
-          const surahName = SURAH_NAMES[d.surah] ?? `সূরা ${bnNum(d.surah)}`;
-          const ayahLabel =
-            d.firstVerse != null && d.lastVerse != null
-              ? `আয়াত ${bnNum(d.firstVerse)}–${bnNum(d.lastVerse)}`
-              : `পেজ ${bnNum(d.pageNo)}`;
-          return (
-            <button
-              key={d.pageId}
-              onClick={() => onSelect(d.pageId)}
-              className={`group flex w-full items-center gap-2.5 border-l-2 px-3 py-2 text-left text-xs transition-all ${
-                active
-                  ? "border-amber-400 bg-gradient-to-r from-amber-500/10 to-transparent text-amber-100"
-                  : "border-transparent text-neutral-400 hover:border-neutral-700 hover:bg-neutral-900/60 hover:text-neutral-200"
-              }`}
-            >
-              <span
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold transition-colors ${
-                  active ? "bg-amber-500 text-neutral-950" : "bg-neutral-800 text-neutral-500 group-hover:bg-neutral-700"
-                }`}
-              >
-                {idx + 1}
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-medium leading-tight">{surahName}</span>
-                <span className="truncate text-[10px] text-neutral-600 group-hover:text-neutral-500">
-                  {ayahLabel}
-                </span>
-              </div>
-              {active && (
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-              )}
-            </button>
-          );
-        })}
+      {/* Virtualized Page List — only renders visible items + small overscan */}
+      <div ref={listContainerRef} className="flex-1 overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="px-4 py-6 text-center text-[11px] text-neutral-600">
+            কোনো পেজ পাওয়া যায়নি
+          </div>
+        ) : (
+          <FixedSizeList
+            ref={listRef}
+            height={listHeight}
+            itemCount={filtered.length}
+            itemSize={ITEM_HEIGHT}
+            width="100%"
+            itemData={itemData}
+            overscanCount={3}
+            className="scrollbar-thin"
+          >
+            {PageListItem}
+          </FixedSizeList>
+        )}
       </div>
     </aside>
   );

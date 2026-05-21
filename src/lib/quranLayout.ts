@@ -1,6 +1,10 @@
 // Continuous RTL paragraph flow for the Quran stream.
 // Arabic and Bangla are packed as two INDEPENDENT streams and zipped per row,
 // so a row may contain Arabic only, Bangla only, or both.
+//
+// PERFORMANCE: Text measurement uses OffscreenCanvas via canvasMeasure.ts
+// instead of a plain HTMLCanvasElement singleton, enabling cache reuse
+// across quranLayout and textReflow without DOM access.
 
 export type Verse = {
   id: number;
@@ -33,32 +37,23 @@ function stripBanglaNumbering(s: string): string {
 }
 
 /* ---------------- measurement ---------------- */
+// Import the shared OffscreenCanvas measurement pool.
+// Falls back to DOM or rough SSR estimate internally.
+import { measureTextWidthCanvas } from "./canvasMeasure";
 
-let measureCanvas: HTMLCanvasElement | null = null;
-let measureCtx: CanvasRenderingContext2D | null = null;
-
-function getCtx(): CanvasRenderingContext2D {
-  if (measureCtx) return measureCtx;
-  if (typeof document === "undefined") {
-    // Return a mock CanvasRenderingContext2D for server-side rendering (SSR)
-    return {
-      font: "",
-      measureText: (text: string) => ({
-        width: text.length * 12, // Rough estimate for server-side layout spacing
-      }),
-    } as unknown as CanvasRenderingContext2D;
-  }
-  measureCanvas = document.createElement("canvas");
-  measureCtx = measureCanvas.getContext("2d")!;
-  return measureCtx;
-}
+/** Active font used by the current pack pass. */
+let _activeFontFamily = "";
+let _activeFontPx = 0;
 
 function setFont(fontPx: number, fontFamily: string) {
-  getCtx().font = `${fontPx}px ${fontFamily}`;
+  _activeFontFamily = fontFamily;
+  _activeFontPx = fontPx;
 }
 
 function measure(text: string): number {
-  return getCtx().measureText(text).width;
+  if (!_activeFontFamily || !_activeFontPx) return text.length * 12;
+  // SSR: OffscreenCanvas not available — canvasMeasure falls back to DOM or estimate
+  return measureTextWidthCanvas(text, _activeFontFamily, _activeFontPx);
 }
 
 /* ---------------- packing ---------------- */

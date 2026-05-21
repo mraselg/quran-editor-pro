@@ -21,7 +21,7 @@ import { useEditorStore } from "@/state/editorStore";
 import type { SelectionScope } from "@/state/editorStore";
 import { useOverridesStore } from "@/state/overridesStore";
 import { useReflowStore } from "@/state/reflowStore";
-import { useHistoryStore, relativeTime, type HistoryEntry } from "@/state/historyStore";
+import { useHistoryStore, relativeTime, type HistoryEntry, type HistoryPatch } from "@/state/historyStore";
 
 type Props = {
   zoom: number;
@@ -289,17 +289,17 @@ function HistoryItem({ entry, onClose }: { entry: HistoryEntry; onClose: () => v
     e.stopPropagation();
     if (countdown !== null) return;
 
-    // Capture current full state so we can restore after 5s
-    const currentSnapshot = {
-      local: JSON.parse(JSON.stringify(useOverridesStore.getState().local)),
-      global: JSON.parse(JSON.stringify(useOverridesStore.getState().global)),
+    // Capture the current after-value so we can restore it after 5s.
+    // Since we use patch-based history, we only need the single field value.
+    const afterPatch: HistoryPatch = {
+      field: entry.patch.field,
+      layerKey: entry.patch.layerKey,
+      before: entry.patch.after, // flip: after becomes "before" for restore
+      after: entry.patch.before, // flip: before becomes the target
     };
 
-    // Apply the BEFORE snapshot from this history entry (whole-state replay).
-    // This handles text edits, transforms, and global changes consistently.
-    if (entry.beforeSnapshot) {
-      useHistoryStore.getState().applySnapshot(entry.beforeSnapshot);
-    }
+    // Apply the patch in reverse (show "before" state)
+    useHistoryStore.getState().applyPatchReverse(entry.patch);
 
     // 5-second countdown
     let c = 5;
@@ -311,8 +311,8 @@ function HistoryItem({ entry, onClose }: { entry: HistoryEntry; onClose: () => v
         clearInterval(timerRef.current!);
         timerRef.current = null;
         setCountdown(null);
-        // Restore the user's pre-preview state via the same snapshot mechanism
-        useHistoryStore.getState().applySnapshot(currentSnapshot);
+        // Restore: apply the after-patch in reverse (which brings back the after value)
+        useHistoryStore.getState().applyPatchReverse(afterPatch);
       }
     }, 1000);
   };

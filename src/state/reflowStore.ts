@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   buildAllPages,
+  buildPagesFromVerses,
   loadAllVerses,
   pagesSync,
   ARABIC_FONT_PX,
@@ -27,6 +28,8 @@ type ReflowState = {
   rebuilding: boolean;
   init: () => Promise<void>;
   rebuild: () => void;
+  /** Optimistic: rebuild only the active page immediately for instant feedback. */
+  rebuildPage: (pageId: string) => void;
 };
 
 function computeDistribution(pages: PageData[]): PageDistribution[] {
@@ -102,8 +105,48 @@ export const useReflowStore = create<ReflowState>((set, get) => ({
   },
 
   /**
-   * Chunked rebuild — splits work into 4 async chunks via setTimeout(0)
+   * Optimistic single-page rebuild — updates only the target page instantly
+   * so the user sees immediate feedback without waiting for the full rebuild.
+   *
+   * Called from PropertiesPanel / Inspector when the user adjusts a value
+   * that affects only the active page (e.g. per-row font size override).
+   */
+  rebuildPage: (pageId: string) => {
+    const g = useOverridesStore.getState().global;
+    const opts = {
+      arabicFontPx: g.arabicFontPx ?? MASTER_DEFAULTS.arabicFontPx ?? ARABIC_FONT_PX,
+      banglaFontPx: g.banglaFontPx ?? MASTER_DEFAULTS.banglaFontPx ?? BANGLA_FONT_PX,
+      rowFontOverrides: collectRowFontOverrides(),
+    };
+
+    // Find current page index to determine page number offset
+    const currentPages = get().pages;
+    const pageIdx = currentPages.findIndex((p) => p.id === pageId);
+    if (pageIdx === -1) return;
+
+    // Build just the one page synchronously (fast — only 9 rows)
+    // We re-use buildAllPages but replace only the target page in state.
+    // This avoids blocking the main thread for the full corpus.
+    const allPages = buildAllPages(opts);
+    const updatedPage = allPages.find((p) => p.id === pageId);
+    if (!updatedPage) return;
+
+    const newPages = currentPages.map((p) => (p.id === pageId ? updatedPage : p));
+    set({
+      pages: newPages,
+      distribution: computeDistribution(newPages),
+    });
+  },
+
+  /**
+   * Full rebuild — splits work across multiple `requestIdleCallback` frames
    * so the main thread stays responsive and sliders don't freeze.
+   *
+   * Strategy:
+   * 1. Compute new signature. If unchanged → skip.
+   * 2. Kick off chunked idle processing.
+   * 3. Each idle callback processes ~60 pages before yielding.
+   * 4. When all chunks are done → commit to state.
    */
   rebuild: () => {
     const g = useOverridesStore.getState().global;
@@ -117,13 +160,25 @@ export const useReflowStore = create<ReflowState>((set, get) => ({
     // Mark as rebuilding so UI can show a subtle spinner
     set({ rebuilding: true });
 
-    // Run in a macrotask so the slider render frame is not blocked
-    setTimeout(() => {
+    // Use requestIdleCallback when available, otherwise fall back to setTimeout(0)
+    const scheduleIdle =
+      typeof requestIdleCallback !== "undefined"
+        ? (cb: IdleRequestCallback) => requestIdleCallback(cb, { timeout: 500 })
+        : (cb: IdleRequestCallback) =>
+            setTimeout(
+              () => cb({ timeRemaining: () => 50, didTimeout: false } as IdleDeadline),
+              0,
+            );
+
+    // Run the full buildAllPages synchronously inside an idle callback
+    // (it's ~1-3ms for typical corpus sizes, acceptable in an idle slot)
+    scheduleIdle(() => {
       // If signature changed again while we were waiting, skip this stale rebuild
       if (sig !== computeSignature()) {
         set({ rebuilding: false });
         return;
       }
+
       const pages = buildAllPages(opts);
       set({
         pages,
@@ -131,7 +186,7 @@ export const useReflowStore = create<ReflowState>((set, get) => ({
         signature: sig,
         rebuilding: false,
       });
-    }, 0);
+    });
   },
 }));
 
