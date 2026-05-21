@@ -209,6 +209,19 @@ export function CanvasToolbar({
             }`}
           >
             <History className="h-3.5 w-3.5" />
+        {/* History dropdown */}
+        <div className="relative" ref={histRef}>
+          <button
+            ref={btnRef}
+            onClick={() => setHistOpen((v) => !v)}
+            title="পরিবর্তনের ইতিহাস"
+            className={`relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
+              histOpen
+                ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                : "border-neutral-700 bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+            }`}
+          >
+            <History className="h-3.5 w-3.5" />
             {entries.length > 0 && (
               <span className="absolute -right-0.5 -top-0.5 grid h-3 min-w-[12px] place-items-center rounded-full bg-amber-500 px-0.5 text-[7px] font-black text-neutral-950">
                 {entries.length > 9 ? "9+" : entries.length}
@@ -216,8 +229,12 @@ export function CanvasToolbar({
             )}
           </button>
 
-          {histOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-[320px] overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl">
+          {histOpen && popPos && typeof document !== "undefined" && createPortal(
+            <div
+              ref={popRef}
+              style={{ position: "fixed", top: popPos.top, left: popPos.left, width: 320, zIndex: 9999 }}
+              className="overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl"
+            >
               <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
                 <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300">
                   <Clock className="h-3 w-3" />পরিবর্তনের ইতিহাস
@@ -236,7 +253,8 @@ export function CanvasToolbar({
                   ))
                 )}
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
 
