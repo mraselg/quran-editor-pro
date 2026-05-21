@@ -444,8 +444,15 @@ function InlineTextEditor({
     const { fits, overflow } = splitToFit(currentText, availableWidth, fontFamily, fontSize);
     if (!overflow) return;
 
-    // Save fitting text directly (don't touch committedRef so blur can re-save)
-    useOverridesStore.getState().patchLocal(lk, { text: fits });
+    // Silent: avoid spamming history with per-keystroke overflow patches
+    void import("@/state/historyStore").then(({ beginSilent, endSilent }) => {
+      beginSilent();
+      try {
+        useOverridesStore.getState().patchLocal(lk, { text: fits });
+      } finally {
+        endSilent();
+      }
+    });
 
     // Reset editor content to the fitting portion
     el.textContent = fits;
@@ -461,7 +468,7 @@ function InlineTextEditor({
       }
     } catch { /* ignore */ }
 
-    // Cascade overflow to the next row(s)
+    // Cascade overflow to the next row(s) — also silent
     const nextRowIdx = rowIndex + 1;
     const nextOnPage = nextRowIdx < lines.length;
     const targetPageId = nextOnPage
@@ -472,11 +479,18 @@ function InlineTextEditor({
         })();
     const targetRowIdx = nextOnPage ? nextRowIdx : 0;
 
-    reflowFrom({
-      ...getReflowBase(),
-      startPageId: targetPageId,
-      startRowIndex: targetRowIdx,
-      startOverflow: overflow,
+    void import("@/state/historyStore").then(({ beginSilent, endSilent }) => {
+      beginSilent();
+      try {
+        reflowFrom({
+          ...getReflowBase(),
+          startPageId: targetPageId,
+          startRowIndex: targetRowIdx,
+          startOverflow: overflow,
+        });
+      } finally {
+        endSilent();
+      }
     });
   };
 
