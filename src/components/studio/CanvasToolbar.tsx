@@ -85,13 +85,12 @@ export function CanvasToolbar({
   }, [histOpen]);
 
   const SCOPE_META: Record<SelectionScope, { labelBn: string; color: string }> = {
-    row:    { labelBn: "সারি",  color: "#f59e0b" },
-    page:   { labelBn: "পেজ",  color: "#06b6d4" },
-    surah:  { labelBn: "সূরা", color: "#8b5cf6" },
-    para:   { labelBn: "পারা", color: "#ec4899" },
-    global: { labelBn: "সকল", color: "#10b981" },
+    general: { labelBn: "সাধারণ", color: "#f59e0b" },
+    page:    { labelBn: "পেজ",   color: "#06b6d4" },
+    surah:   { labelBn: "সূরা",  color: "#8b5cf6" },
+    global:  { labelBn: "সকল",   color: "#10b981" },
   };
-  const SCOPES: SelectionScope[] = ["row", "page", "surah", "para", "global"];
+  const SCOPES: SelectionScope[] = ["general", "page", "surah", "global"];
 
   // Recent 10 entries newest-first
   const recent = [...entries].reverse().slice(0, 10);

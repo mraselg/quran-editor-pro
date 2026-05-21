@@ -6,8 +6,13 @@ export type ActiveTool = "select" | "type";
 /** Which sub-layer of a row is active in Type Tool mode */
 export type ActiveLayerKind = "arabic" | "bangla" | "symbol" | null;
 
-/** Scope determines which elements are affected by overrides */
-export type SelectionScope = "row" | "page" | "surah" | "para" | "global";
+/** Scope determines which elements are affected by overrides.
+ *  general = only the single selected element (default)
+ *  page    = all same-kind elements within the current page
+ *  surah   = all same-kind elements within the current surah
+ *  global  = all same-kind elements across every page
+ */
+export type SelectionScope = "general" | "page" | "surah" | "global";
 
 export type Selection = {
   kind: SelectionKind;
@@ -57,7 +62,7 @@ type EditorState = {
 export const useEditorStore = create<EditorState>((set) => ({
   editMode: false,
   activeTool: "select",
-  scope: "page",
+  scope: "general",
   legacyScope: "local",
 
   selection: null,

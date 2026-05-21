@@ -1,21 +1,20 @@
 import { useState } from "react";
 import {
   AlignCenter, AlignJustify, AlignLeft, AlignRight, BookOpen, Clock, Globe,
-  Layers, RotateCcw, ScanLine, Type, Move, ChevronDown, ChevronUp
+  RotateCcw, ScanLine, Type, Move
 } from "lucide-react";
 import { useEditorStore, type SelectionScope } from "@/state/editorStore";
-import { useOverridesStore, type GlobalOverrides, layerKey } from "@/state/overridesStore";
+import { useOverridesStore, type GlobalOverrides, patchScoped } from "@/state/overridesStore";
 import { useHistoryStore, relativeTime } from "@/state/historyStore";
 import { ARABIC_FONT_PX, BANGLA_FONT_PX } from "./FabricLines";
 
 const SCOPE_META: Record<SelectionScope, { labelBn: string; color: string; icon: React.ElementType; desc: string }> = {
-  row:    { labelBn: "সারি",  color: "#f59e0b", icon: AlignJustify, desc: "শুধু এই সারিতে" },
-  page:   { labelBn: "পেজ",  color: "#06b6d4", icon: ScanLine,     desc: "এই পেজের সব সারি" },
-  surah:  { labelBn: "সূরা", color: "#8b5cf6", icon: BookOpen,     desc: "এই সূরার সব পেজ" },
-  para:   { labelBn: "পারা", color: "#ec4899", icon: Layers,       desc: "এই পারার সব পেজ" },
-  global: { labelBn: "সকল", color: "#10b981", icon: Globe,        desc: "সম্পূর্ণ কুর্আন" },
+  general: { labelBn: "সাধারণ", color: "#f59e0b", icon: AlignJustify, desc: "শুধু নির্বাচিত উপাদান" },
+  page:    { labelBn: "পেজ",   color: "#06b6d4", icon: ScanLine,     desc: "এই পেজের একই ধরনের সব উপাদান" },
+  surah:   { labelBn: "সূরা",  color: "#8b5cf6", icon: BookOpen,     desc: "এই সূরার একই ধরনের সব উপাদান" },
+  global:  { labelBn: "সকল",   color: "#10b981", icon: Globe,        desc: "সব পেজের একই ধরনের সব উপাদান" },
 };
-const SCOPES: SelectionScope[] = ["row", "page", "surah", "para", "global"];
+const SCOPES: SelectionScope[] = ["general", "page", "surah", "global"];
 
 type Tab = "controls" | "history";
 
@@ -136,7 +135,7 @@ function ControlsTab({ color, scope }: { color: string; scope: SelectionScope })
       </Group>
 
       {/* Per-line section when row is selected */}
-      {selection && (scope === "page" || scope === "row") && (
+      {selection && (scope === "page" || scope === "general") && (
         <>
           <div className="h-px bg-neutral-800/50" />
           <RowDetailSection color={color} selection={selection} />
@@ -160,6 +159,8 @@ function ControlsTab({ color, scope }: { color: string; scope: SelectionScope })
 
 function RowDetailSection({ color, selection }: { color: string; selection: import("@/state/editorStore").Selection }) {
   const patchLocal = useOverridesStore((s) => s.patchLocal);
+  const scope = useEditorStore((s) => s.scope);
+  const apply = (patch: Parameters<typeof patchLocal>[1]) => { void patchScoped(selection.key, patch, scope); };
   const local = useOverridesStore((s) => s.local[selection.key]);
   const dx = local?.dx ?? 0;
   const dy = local?.dy ?? 0;
@@ -172,19 +173,19 @@ function RowDetailSection({ color, selection }: { color: string; selection: impo
       </span>
       <div className="grid grid-cols-2 gap-3">
         <InlineField label="আরবি ফন্ট" value={fontPx} min={16} max={80}
-          onChange={(v) => patchLocal(selection.key, { fontPx: v })}
-          onReset={local?.fontPx !== undefined ? () => patchLocal(selection.key, { fontPx: undefined }) : undefined}
+          onChange={(v) => apply({ fontPx: v })}
+          onReset={local?.fontPx !== undefined ? () => apply({ fontPx: undefined }) : undefined}
           color={color} />
         <InlineField label="X অফসেট" value={dx} min={-100} max={100}
-          onChange={(v) => patchLocal(selection.key, { dx: v })}
-          onReset={local?.dx !== undefined ? () => patchLocal(selection.key, { dx: undefined }) : undefined}
+          onChange={(v) => apply({ dx: v })}
+          onReset={local?.dx !== undefined ? () => apply({ dx: undefined }) : undefined}
           color={color} />
         <InlineField label="Y অফসেট" value={dy} min={-100} max={100}
-          onChange={(v) => patchLocal(selection.key, { dy: v })}
-          onReset={local?.dy !== undefined ? () => patchLocal(selection.key, { dy: undefined }) : undefined}
+          onChange={(v) => apply({ dy: v })}
+          onReset={local?.dy !== undefined ? () => apply({ dy: undefined }) : undefined}
           color={color} />
       </div>
-      <button onClick={() => patchLocal(selection.key, { dx: undefined, dy: undefined, fontPx: undefined, scale: undefined })}
+      <button onClick={() => apply({ dx: undefined, dy: undefined, fontPx: undefined, scale: undefined })}
         className="mt-1 rounded border border-neutral-700 bg-neutral-800 py-1.5 text-[10px] font-semibold text-neutral-400 hover:bg-red-900/20 hover:text-red-400 transition-colors">
         এই সারি রিসেট করুন
       </button>
@@ -313,9 +314,10 @@ function DSlider({ k, label, min, max, fallback, color }: {
 
 function LocalFields({ color }: { color: string }) {
   const selection = useEditorStore((s) => s.selection);
-  const patchLocal = useOverridesStore((s) => s.patchLocal);
+  const scope = useEditorStore((s) => s.scope);
   const local = useOverridesStore((s) => selection ? s.local[selection.key] : undefined);
   if (!selection) return <div className="text-[10px] text-neutral-600 rounded bg-neutral-900/50 p-2 text-center">ট্রান্সফর্ম করার জন্য সারি নির্বাচন করুন</div>;
+  const apply = (patch: Record<string, unknown>) => { void patchScoped(selection.key, patch as never, scope); };
   return (
     <div className="grid grid-cols-2 gap-3">
       {(["dx", "dy"] as const).map((f) => (
@@ -323,13 +325,13 @@ function LocalFields({ color }: { color: string }) {
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-neutral-500" style={{ color }}>{f === "dx" ? "X অফসেট" : "Y অফসেট"}</span>
             {(local?.[f] ?? 0) !== 0 && (
-              <button onClick={() => patchLocal(selection.key, { [f]: undefined })} className="text-neutral-600 hover:text-amber-400">
+              <button onClick={() => apply({ [f]: undefined })} className="text-neutral-600 hover:text-amber-400">
                 <RotateCcw className="h-2.5 w-2.5" />
               </button>
             )}
           </div>
           <input type="number" value={local?.[f] ?? 0}
-            onChange={(e) => patchLocal(selection.key, { [f]: Number(e.target.value) || undefined })}
+            onChange={(e) => apply({ [f]: Number(e.target.value) || undefined })}
             className="w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-[11px] outline-none focus:border-amber-400"
             step={1} />
         </div>
@@ -401,6 +403,7 @@ function NumInput({
 function CharacterPanel({ selKey }: { selKey: string }) {
   const localMap = useOverridesStore((s) => s.local);
   const patchLocal = useOverridesStore((s) => s.patchLocal);
+  const scope = useEditorStore((s) => s.scope);
   const ov = localMap[selKey] ?? {};
 
   const fontPx   = ov.fontPx   ?? 0;
@@ -411,7 +414,7 @@ function CharacterPanel({ selKey }: { selKey: string }) {
   const baseline = ov.baseline ?? 0;
   const align    = ov.align    ?? "justify";
 
-  const set = (k: string, v: number | string) => patchLocal(selKey, { [k]: v } as any);
+  const set = (k: string, v: number | string) => { void patchScoped(selKey, { [k]: v } as never, scope); };
 
   const ALIGN_OPTIONS = [
     { value: "left",    icon: AlignLeft,    label: "বাম" },

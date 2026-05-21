@@ -126,7 +126,7 @@ export const useOverridesStore = create<OverridesState>()(
             const after = (patch as Record<string, unknown>)[mainField];
             if (before === after) return;
             const parts = key.split(":");
-            const scope = "row" as const;
+            const scope = "general" as const;
             import("./historyStore").then(({ captureHistory }) => {
               captureHistory(
                 mainField,
@@ -197,3 +197,74 @@ export const symbolKey = (
   symbolId: string,
 ): LocalKey =>
   `symbol:${surah}:${ayah}:${wordIndex}:${charOffset}:${symbolId}`;
+
+/* ─── Scope-aware fan-out ────────────────────────────────────────────
+ * Given a representative layerKey (e.g. "layer:vpage-3:5:bangla" or
+ * "row:vpage-3:5") and a SelectionScope, return ALL layerKeys the patch
+ * should apply to. The "kind" (arabic/bangla/symbol) is preserved.
+ */
+import type { SelectionScope } from "./editorStore";
+
+function parseLayerKey(key: string): { kind: "layer" | "row"; pageId: string; rowIndex: number; layer?: string } | null {
+  const parts = key.split(":");
+  if (parts[0] === "layer" && parts.length >= 4) {
+    return { kind: "layer", pageId: parts[1]!, rowIndex: Number(parts[2]), layer: parts[3] };
+  }
+  if (parts[0] === "row" && parts.length >= 3) {
+    return { kind: "row", pageId: parts[1]!, rowIndex: Number(parts[2]) };
+  }
+  return null;
+}
+
+/** Build all matching layerKeys for the given scope. */
+export async function getScopedLayerKeys(
+  representativeKey: LocalKey,
+  scope: SelectionScope,
+): Promise<LocalKey[]> {
+  if (scope === "general") return [representativeKey];
+  const parsed = parseLayerKey(representativeKey);
+  if (!parsed) return [representativeKey];
+
+  const { useReflowStore } = await import("./reflowStore");
+  const { pages, distribution } = useReflowStore.getState();
+
+  // Find which surah the source page belongs to
+  const srcInfo = distribution.find((d) => d.pageId === parsed.pageId);
+  const srcSurah = srcInfo?.surah ?? 0;
+
+  let targetPages: string[];
+  if (scope === "page") targetPages = [parsed.pageId];
+  else if (scope === "surah")
+    targetPages = distribution.filter((d) => d.surah === srcSurah).map((d) => d.pageId);
+  else /* global */ targetPages = pages.map((p) => p.id);
+
+  // For each target page, enumerate row indices and build matching keys.
+  const out: LocalKey[] = [];
+  for (const pid of targetPages) {
+    const page = pages.find((p) => p.id === pid);
+    if (!page) continue;
+    const rowCount = page.lines?.length ?? 0;
+    for (let i = 0; i < rowCount; i++) {
+      if (parsed.kind === "layer") out.push(`layer:${pid}:${i}:${parsed.layer}`);
+      else out.push(`row:${pid}:${i}`);
+    }
+  }
+  return out.length > 0 ? out : [representativeKey];
+}
+
+/** Apply a patch to one or many layerKeys based on scope. Text patches are
+ *  always single-key (text is unique per row). */
+export async function patchScoped(
+  representativeKey: LocalKey,
+  patch: Partial<Record<keyof LocalOverride, LocalOverride[keyof LocalOverride] | undefined>>,
+  scope: SelectionScope,
+) {
+  const store = useOverridesStore.getState();
+  // Never fan out text edits.
+  if ("text" in patch) {
+    store.patchLocal(representativeKey, patch);
+    return;
+  }
+  const keys = await getScopedLayerKeys(representativeKey, scope);
+  for (const k of keys) store.patchLocal(k, patch);
+}
