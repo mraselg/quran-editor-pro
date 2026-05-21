@@ -447,7 +447,8 @@ function InlineTextEditor({
 
   const getReflowBase = () => ({
     layer,
-    allPages: useReflowStore.getState().pages,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    allPages: useReflowStore.getState().pages as unknown as Array<{ id: string; lines: any[] }>,
     localMap: useOverridesStore.getState().local,
     patchLocal: useOverridesStore.getState().patchLocal,
     layerKeyFn: layerKey,
