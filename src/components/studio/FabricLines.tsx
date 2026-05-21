@@ -523,6 +523,8 @@ function InlineTextEditor({
       const nextOnPage = nextRowIdx < lines.length;
 
       const base = getReflowBase();
+      let focusPageId = pageId;
+      let focusRowIdx = rowIndex;
       if (nextOnPage) {
         const nextLk = layerKey(pageId, nextRowIdx, layer);
         const nextExisting =
@@ -533,6 +535,7 @@ function InlineTextEditor({
           ? afterText + (nextExisting ? " " + nextExisting : "")
           : nextExisting;
         reflowFrom({ ...base, startPageId: pageId, startRowIndex: nextRowIdx, startOverflow: combined });
+        focusRowIdx = nextRowIdx;
       } else {
         const pi = allPages.findIndex((p) => p.id === pageId);
         if (pi >= 0 && pi + 1 < allPages.length) {
@@ -548,8 +551,23 @@ function InlineTextEditor({
             ? afterText + (nextExisting ? " " + nextExisting : "")
             : nextExisting;
           reflowFrom({ ...base, startPageId: nextPage.id, startRowIndex: 0, startOverflow: combined });
+          focusPageId = nextPage.id;
+          focusRowIdx = 0;
         }
       }
+
+      // Move selection/focus to the next row's same layer so user keeps typing
+      const nextLk = layerKey(focusPageId, focusRowIdx, layer);
+      const ed = useEditorStore.getState();
+      ed.navigateTo(focusPageId, nextLk);
+      ed.setSelection({
+        kind: "layer",
+        key: nextLk,
+        pageId: focusPageId,
+        rowIndex: focusRowIdx,
+        layerKind: layer,
+      });
+      ed.setActiveTool("type");
       return;
     }
 
