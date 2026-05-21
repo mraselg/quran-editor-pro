@@ -413,12 +413,26 @@ function InlineTextEditor({
   const ref = useRef<HTMLDivElement>(null);
   const committedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
+  const lastSavedRef = useRef<string>(initialText);
+
+  // Sync DOM ↔ store: on each keystroke, write text to store immediately
+  // (no debounce — Zustand patches are cheap, and this guarantees the edit
+  // never gets lost on selection-change/unmount races).
+  const syncToStore = () => {
+    const el = ref.current;
+    if (!el) return;
+    const text = el.textContent ?? "";
+    if (text === lastSavedRef.current) return;
+    lastSavedRef.current = text;
+    useOverridesStore.getState().patchLocal(lk, { text });
+  };
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
     el.textContent = initialText;
+    lastSavedRef.current = initialText;
     el.focus();
 
     try {
@@ -434,12 +448,16 @@ function InlineTextEditor({
     } catch { /* ignore */ }
 
     return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-      if (!committedRef.current) {
-        const text = el.textContent ?? "";
-        if (!(text === "" && initialText !== "")) {
-          onSave(text);
-        }
+      // Flush any pending overflow-check synchronously before tearing down
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      // Always commit the current DOM text — covers unmount-without-blur
+      const text = el.textContent ?? "";
+      if (text !== lastSavedRef.current) {
+        useOverridesStore.getState().patchLocal(lk, { text });
+        lastSavedRef.current = text;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -461,7 +479,10 @@ function InlineTextEditor({
     if (committedRef.current) return;
     committedRef.current = true;
     const finalText = text ?? ref.current?.textContent ?? "";
-    onSave(finalText);
+    if (finalText !== lastSavedRef.current) {
+      lastSavedRef.current = finalText;
+      onSave(finalText);
+    }
   };
 
   // rAF-throttled overflow check — coalesces fast keystrokes into one frame
@@ -469,12 +490,17 @@ function InlineTextEditor({
     rafRef.current = null;
     const el = ref.current;
     if (!el) return;
-    const currentText = el.textContent ?? "";
+
+    // Always sync current text first (covers normal typing)
+    syncToStore();
+
     if (el.scrollWidth <= el.clientWidth + 2) return;
 
+    const currentText = el.textContent ?? "";
     const { fits, overflow } = splitToFit(currentText, availableWidth, fontFamily, fontSize);
     if (!overflow) return;
 
+    lastSavedRef.current = fits;
     useOverridesStore.getState().patchLocal(lk, { text: fits });
     el.textContent = fits;
     try {
