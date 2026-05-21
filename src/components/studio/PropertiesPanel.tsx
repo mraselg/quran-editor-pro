@@ -9,13 +9,12 @@ import { useHistoryStore, relativeTime } from "@/state/historyStore";
 import { ARABIC_FONT_PX, BANGLA_FONT_PX } from "./FabricLines";
 
 const SCOPE_META: Record<SelectionScope, { labelBn: string; color: string; icon: React.ElementType; desc: string }> = {
-  row:    { labelBn: "সারি",  color: "#f59e0b", icon: AlignJustify, desc: "শুধু এই সারিতে" },
-  page:   { labelBn: "পেজ",  color: "#06b6d4", icon: ScanLine,     desc: "এই পেজের সব সারি" },
-  surah:  { labelBn: "সূরা", color: "#8b5cf6", icon: BookOpen,     desc: "এই সূরার সব পেজ" },
-  para:   { labelBn: "পারা", color: "#ec4899", icon: Layers,       desc: "এই পারার সব পেজ" },
-  global: { labelBn: "সকল", color: "#10b981", icon: Globe,        desc: "সম্পূর্ণ কুর্আন" },
+  general: { labelBn: "সাধারণ", color: "#f59e0b", icon: AlignJustify, desc: "শুধু নির্বাচিত উপাদান" },
+  page:    { labelBn: "পেজ",   color: "#06b6d4", icon: ScanLine,     desc: "এই পেজের একই ধরনের সব উপাদান" },
+  surah:   { labelBn: "সূরা",  color: "#8b5cf6", icon: BookOpen,     desc: "এই সূরার একই ধরনের সব উপাদান" },
+  global:  { labelBn: "সকল",   color: "#10b981", icon: Globe,        desc: "সব পেজের একই ধরনের সব উপাদান" },
 };
-const SCOPES: SelectionScope[] = ["row", "page", "surah", "para", "global"];
+const SCOPES: SelectionScope[] = ["general", "page", "surah", "global"];
 
 type Tab = "controls" | "history";
 
