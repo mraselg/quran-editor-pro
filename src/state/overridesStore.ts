@@ -126,7 +126,7 @@ export const useOverridesStore = create<OverridesState>()(
             const after = (patch as Record<string, unknown>)[mainField];
             if (before === after) return;
             const parts = key.split(":");
-            const scope = "row" as const;
+            const scope = "general" as const;
             import("./historyStore").then(({ captureHistory }) => {
               captureHistory(
                 mainField,
