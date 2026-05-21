@@ -1,74 +1,85 @@
-# বাকি প্ল্যান-আইটেম (৬টি)
+## লক্ষ্য
+Arabic/Bangla text edit, history actions, dynamic reflow, এবং top symbol alignment — এই ৪টা flow end-to-end ঠিক করা হবে এবং live preview-এ verify করা হবে।
 
-`historyStore.ts` রিফ্যাক্টর সম্পন্ন। এখন বাকি কাজগুলো ধাপে ধাপে প্রয়োগ করা হবে।
+## বর্তমানে চিহ্নিত সমস্যা
+1. **লাইন এডিট করার সময় লেখা হারিয়ে যাচ্ছে / apply হচ্ছে না**
+   - `InlineTextEditor` unmount হলে `onSave(text)` চালায়, কিন্তু edit চলাকালে selection/tool change হলে stale text save হতে পারে।
+   - `handleInput()` overflow detect হলে row text-কে `patchLocal()` দিয়ে silent update করছে, কিন্তু final commit path (`blur`/`Enter`) আর intermediate reflow path-এর মধ্যে mismatch আছে।
+   - `TopSymbolLayer` এখনো `slot.arabic` guard-এর ওপর render হচ্ছে, ফলে override text থাকলেও কিছু ক্ষেত্রে symbol layer stale source থেকে কাজ করে।
 
-## ১. previewStore (নতুন ফাইল)
-`src/state/previewStore.ts` — ৫-সেকেন্ডের "আগেরটা দেখাও" ফিচার।
-- `start(entryId)` — বর্তমান state snapshot stash করে, entry-এর `beforeSnapshot` apply করে, ৫সে টাইমার চালু করে
-- `cancel()` — টাইমার বন্ধ করে stashed snapshot ফিরিয়ে আনে
-- state: `activeEntryId`, `secondsLeft`, `stashedSnapshot`
-- `setInterval` দিয়ে প্রতি সেকেন্ডে `secondsLeft` কমে, 0 হলে auto-restore
+2. **Arabic text change করলে full dynamic apply হচ্ছে না**
+   - `reflowFrom()` শুধু overflow push করে; underflow/backfill বা current row recompute symmetry নেই।
+   - `reflowStore.rebuild()` signature-এ text override ধরা হচ্ছে না; ফলে canonical page rebuild pipeline text edits সম্পর্কে অন্ধ।
+   - page data base text বনাম local override text—দুই source আলাদা আচরণ করছে।
 
-## ২. overridesStore — silent mode wrapping
-টেক্সট-এডিট flow-এ `historyStore.beginSilent()` / `endSilent()` যোগ করা হবে যাতে প্রতি keystroke-এ history entry তৈরি না হয়। শুধু `commit` (blur/Enter)-এ একটি entry capture হবে।
+3. **History features ঠিকমতো কাজ করছে না**
+   - History preview logic `CanvasToolbar`-এর ভিতরে local-only one-field patch করছে; `HistoryEntry.beforeSnapshot` থাকা সত্ত্বেও সেটা ব্যবহার করছে না।
+   - Preview restore manual reset/apply করছে, যা full snapshot-consistent নয়।
+   - History UX split হয়েছে `CanvasToolbar` আর `PropertiesPanel`-এ; behavior duplicate এবং inconsistent।
 
-পরিবর্তন:
-- `setLocalArabic`, `setLocalBangla` → silent mode-এ patch
-- নতুন `commitLocalText(layer, pageId, rowIndex, field)` → silent বন্ধ করে before/after সহ একটি history entry capture করে
-- `resetRow`, `resetPage` → সাধারণ (non-silent) capture যাতে undo যায়
+4. **Top symbols সবসময় fixed থাকছে না**
+   - `TopSymbolLayer`-এ measurement source `displayArabic/liveText`, কিন্তু icon render guard source `slot.arabic`; override/edited text-এর সাথে একীভূত নয়।
+   - edit mode-এ contentEditable ref বদলালে symbol measurement transiently miss করতে পারে।
 
-## ৩. TopHistoryStrip + CanvasToolbar
-- `src/components/studio/TopHistoryStrip.tsx` (নতুন) — শেষ ৫-৭টি entry chip আকারে দেখাবে; প্রতিটি chip-এ label + scope (page/row) + click handler
-- click → `navigateTo(pageId, rowKey)` + `flashRow(rowKey)` + Properties panel-এ "আগেরটা দেখাও" বাটন সক্রিয় করে
-- `CanvasToolbar.tsx` থেকে "Reset all" আইকন সরানো হবে; TopHistoryStrip বসানো হবে toolbar-এর ডান পাশে
+5. **Inspector / selection flow edit stability-তে interfere করতে পারে**
+   - selection change হলে editing component remount/unmount হয়; commit timing নিয়ন্ত্রণ দুর্বল।
+   - Properties panel collapse ঠিক আছে, কিন্তু active selection churn কমাতে হবে।
 
-## ৪. PropertiesPanel — "আগেরটা দেখাও" বাটন
-নির্বাচিত history entry-র জন্য কাউন্টডাউন বাটন:
-- `previewStore.activeEntryId === selectedEntryId` হলে "↺ {secondsLeft}সে" দেখাবে
-- click → `previewStore.start(entryId)` বা `cancel()`
-- পাশে "এই অবস্থা রাখুন" বাটন → preview-state কে নতুন history entry হিসেবে commit করে
+## implementation plan
+### 1) Text editing pipeline stabilize
+- `FabricLines.tsx`
+  - Arabic/Bangla displayed text-এর source একটিতে নামানো হবে: `effectiveText` = override text বা source text।
+  - `InlineTextEditor`-এ draft text local ref/state রাখা হবে যাতে unmount/blur/save সবসময় latest content commit করে।
+  - `onBlur`, `Escape`, `Enter`, overflow reflow — প্রতিটি path আলাদা role পাবে:
+    - typing = no history spam
+    - commit = single history entry
+    - overflow cascade = silent companion updates
+- stale save / empty save guard যোগ হবে যাতে accidental blank overwrite না হয়।
 
-## ৫. Inspector — Properties default collapsed
-- `editorStore.propsPanelOpen` ডিফল্ট `false`
-- `setSelection()` থেকে auto-open লজিক সরানো হবে
-- শুধু header chevron click-এ toggle হবে
-- layer-tab change-ও panel auto-open করবে না
+### 2) Dynamic reflow fix
+- `textReflow.ts`
+  - overflow cascade logic refactor করে row-by-row deterministic function বানানো হবে
+  - current row split + next rows/pages push unified হবে
+  - empty/underflow cases safe করা হবে
+- `FabricLines.tsx`
+  - `Enter` press, live overflow, এবং final commit — তিনটাতেই একই reflow helper ব্যবহার হবে
+  - next row focus navigation preserved থাকবে
 
-## ৬. FabricLines + TopSymbolLayer + reflow
-**FabricLines.tsx:**
-- row container-এ `data-row-key` attribute
-- `editorStore.focusedRowKey === rowKey` হলে amber outline + box-shadow glow (1সে পর auto-clear via setTimeout)
-- contentEditable-এ `onKeyDown`:
-  - **Enter** (without shift) → preventDefault, next row-এ focus সরায়; শেষ row হলে next page-এর প্রথম row
-  - **Backspace at offset 0** → পূর্ববর্তী row-এর শেষে merge
-- `onInput` → `reflowStore.reflowRow(pageId, rowIndex)` কল করে overflow detect; বেশি হলে অতিরিক্ত শব্দ পরবর্তী row/page-এ cascade
+### 3) History system correct snapshot behavior
+- `CanvasToolbar.tsx`
+  - preview button logic manual patch/reset বাদ দিয়ে `beforeSnapshot`/`applySnapshot()` ভিত্তিক করা হবে
+  - restore/preview countdown robust করা হবে
+- `PropertiesPanel.tsx`
+  - history view behavior `CanvasToolbar`-এর সঙ্গে aligned করা হবে
+- প্রয়োজনে `previewStore.ts` আলাদা করে preview session state centralize করা হবে, যাতে 5-second preview, cancel, restore conflict-free হয়
 
-**TopSymbolLayer.tsx:**
-- `isEditing` অবস্থায় symbol উধাও হয় — fix: hidden mirror `<span ref={mirrorRef} aria-hidden>` সবসময় mount রাখা হবে measurement-এর জন্য; visible span আলাদাভাবে editable হবে
-- ResizeObserver mirror span-এ attach করা হবে যাতে edit চলাকালেও symbol position সঠিক থাকে
+### 4) Top symbol locking fix
+- `TopSymbolLayer.tsx`
+  - render condition `effectiveArabic`-এর ওপর নির্ভর করবে, `slot.arabic`-এর ওপর নয়
+  - live editing text + committed override text — দুই ক্ষেত্রেই same source থেকে tajweed detection চলবে
+  - measurement observer/mirror path harden করা হবে যাতে edit চলাকালে icons disappear/jump না করে
+- `FabricLines.tsx`
+  - symbol layer-এ edited Arabic text pass করা হবে canonicalভাবে
 
-**textReflow.ts:**
-- নতুন helper `cascadeOverflow(pageId, rowIndex, extraText)` — row-এর max-width অনুযায়ী words split করে বাকি অংশ next row-এ overrides-এ push করে; recursive
+### 5) Verification pass in live preview
+আমি live preview-এ এগুলো verify করব:
+1. Arabic word edit করলে লাইন blank না হয়
+2. edit blur/Enter-এর পর change apply থাকে
+3. overflow হলে পরের row/page-এ cascade হয়
+4. history preview আগের state 5s দেখায়, তারপর restore হয়
+5. history restore full state apply করে
+6. top symbols edited Arabic-এর ওপর fixed থাকে
+7. selection/history click-এর পর target row flash/navigate ঠিক থাকে
 
-## ফাইল-তালিকা
-1. `src/state/previewStore.ts` (নতুন)
-2. `src/state/overridesStore.ts` (silent wrapping + commit)
-3. `src/state/editorStore.ts` (propsPanelOpen=false, focusedRowKey, navigateTo, flashRow)
-4. `src/components/studio/TopHistoryStrip.tsx` (নতুন)
-5. `src/components/studio/CanvasToolbar.tsx` (Reset সরানো, strip বসানো)
-6. `src/components/studio/PropertiesPanel.tsx` ("আগেরটা দেখাও" বাটন)
-7. `src/components/studio/Inspector.tsx` (auto-open সরানো)
-8. `src/components/studio/FabricLines.tsx` (flash, Enter/Backspace nav, reflow trigger)
-9. `src/components/studio/TopSymbolLayer.tsx` (mirror span fix)
-10. `src/lib/textReflow.ts` (cascadeOverflow helper)
+## touchpoints
+- `src/components/studio/FabricLines.tsx`
+- `src/components/studio/TopSymbolLayer.tsx`
+- `src/lib/textReflow.ts`
+- `src/components/studio/CanvasToolbar.tsx`
+- `src/components/studio/PropertiesPanel.tsx`
+- optional: `src/state/historyStore.ts` / new `src/state/previewStore.ts`
 
-## যাচাইকরণ
-প্রতিটি ধাপের পর preview-এ:
-- arabic টাইপ → top-symbol fixed থাকে ✓
-- Enter চাপ → next row-এ focus ✓
-- শেষ row overflow → পরবর্তী page-এ cascade ✓
-- history strip-এ click → row flash ✓
-- "আগেরটা দেখাও" → ৫সে preview তারপর auto-restore ✓
-- reset → master verses.json থেকে restore ✓
-
-Approve করলে ধারাবাহিকভাবে সব ফাইল প্রয়োগ করা হবে।
+## technical notes
+- History preview-তে single-field revert ব্যবহার না করে snapshot replay ব্যবহার করাই safest, কারণ text reflow multi-row side effects তৈরি করে
+- Top symbol positioning edited text-এর exact rendered DOM node থেকেই measure করতে হবে
+- text edits canonical page rebuild pipeline-কে avoid করে local override + reflow pipeline-এ deterministic রাখতে হবে, নইলে source-of-truth conflict হবে
