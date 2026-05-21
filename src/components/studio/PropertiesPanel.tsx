@@ -4,7 +4,7 @@ import {
   Layers, RotateCcw, ScanLine, Type, Move, ChevronDown, ChevronUp
 } from "lucide-react";
 import { useEditorStore, type SelectionScope } from "@/state/editorStore";
-import { useOverridesStore, type GlobalOverrides, layerKey } from "@/state/overridesStore";
+import { useOverridesStore, type GlobalOverrides, layerKey, patchScoped } from "@/state/overridesStore";
 import { useHistoryStore, relativeTime } from "@/state/historyStore";
 import { ARABIC_FONT_PX, BANGLA_FONT_PX } from "./FabricLines";
 
