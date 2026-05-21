@@ -240,6 +240,7 @@ export const FabricLines = memo(function FabricLines({
                     fontFamily={arabicFamily}
                     fontSize={aFontPx}
                     availableWidth={width - 16}
+                    externalRef={arabicSpanRef as unknown as React.MutableRefObject<HTMLElement | null>}
                     onSave={(t) => patchLocal(aLk, { text: t })}
                   />
                 ) : (
@@ -350,6 +351,7 @@ function InlineTextEditor({
   fontFamily,
   fontSize,
   availableWidth,
+  externalRef,
   onSave,
 }: {
   layerKey: string;
@@ -365,6 +367,7 @@ function InlineTextEditor({
   fontFamily: string;
   fontSize: number;
   availableWidth: number;
+  externalRef?: React.MutableRefObject<HTMLElement | null>;
   onSave: (text: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -380,6 +383,10 @@ function InlineTextEditor({
     el.textContent = initialText;
     el.focus();
 
+    // Expose this element to the parent so TopSymbolLayer's measurer
+    // can track character positions while editing.
+    if (externalRef) externalRef.current = el;
+
     // Place cursor at end
     try {
       const sel = window.getSelection();
@@ -393,8 +400,9 @@ function InlineTextEditor({
       }
     } catch { /* ignore */ }
 
-    // On unmount: save if not already saved
+    // On unmount: save if not already saved + clear externalRef
     return () => {
+      if (externalRef && externalRef.current === el) externalRef.current = null;
       if (!committedRef.current) {
         const text = ref.current?.textContent ?? "";
         onSave(text);
@@ -402,6 +410,7 @@ function InlineTextEditor({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   // ── Reflow helper ─────────────────────────────────────────────────────────
   const getReflowBase = () => ({
@@ -435,8 +444,15 @@ function InlineTextEditor({
     const { fits, overflow } = splitToFit(currentText, availableWidth, fontFamily, fontSize);
     if (!overflow) return;
 
-    // Save fitting text directly (don't touch committedRef so blur can re-save)
-    useOverridesStore.getState().patchLocal(lk, { text: fits });
+    // Silent: avoid spamming history with per-keystroke overflow patches
+    void import("@/state/historyStore").then(({ beginSilent, endSilent }) => {
+      beginSilent();
+      try {
+        useOverridesStore.getState().patchLocal(lk, { text: fits });
+      } finally {
+        endSilent();
+      }
+    });
 
     // Reset editor content to the fitting portion
     el.textContent = fits;
@@ -452,7 +468,7 @@ function InlineTextEditor({
       }
     } catch { /* ignore */ }
 
-    // Cascade overflow to the next row(s)
+    // Cascade overflow to the next row(s) — also silent
     const nextRowIdx = rowIndex + 1;
     const nextOnPage = nextRowIdx < lines.length;
     const targetPageId = nextOnPage
@@ -463,11 +479,18 @@ function InlineTextEditor({
         })();
     const targetRowIdx = nextOnPage ? nextRowIdx : 0;
 
-    reflowFrom({
-      ...getReflowBase(),
-      startPageId: targetPageId,
-      startRowIndex: targetRowIdx,
-      startOverflow: overflow,
+    void import("@/state/historyStore").then(({ beginSilent, endSilent }) => {
+      beginSilent();
+      try {
+        reflowFrom({
+          ...getReflowBase(),
+          startPageId: targetPageId,
+          startRowIndex: targetRowIdx,
+          startOverflow: overflow,
+        });
+      } finally {
+        endSilent();
+      }
     });
   };
 
@@ -500,6 +523,8 @@ function InlineTextEditor({
       const nextOnPage = nextRowIdx < lines.length;
 
       const base = getReflowBase();
+      let focusPageId = pageId;
+      let focusRowIdx = rowIndex;
       if (nextOnPage) {
         const nextLk = layerKey(pageId, nextRowIdx, layer);
         const nextExisting =
@@ -510,6 +535,7 @@ function InlineTextEditor({
           ? afterText + (nextExisting ? " " + nextExisting : "")
           : nextExisting;
         reflowFrom({ ...base, startPageId: pageId, startRowIndex: nextRowIdx, startOverflow: combined });
+        focusRowIdx = nextRowIdx;
       } else {
         const pi = allPages.findIndex((p) => p.id === pageId);
         if (pi >= 0 && pi + 1 < allPages.length) {
@@ -525,8 +551,23 @@ function InlineTextEditor({
             ? afterText + (nextExisting ? " " + nextExisting : "")
             : nextExisting;
           reflowFrom({ ...base, startPageId: nextPage.id, startRowIndex: 0, startOverflow: combined });
+          focusPageId = nextPage.id;
+          focusRowIdx = 0;
         }
       }
+
+      // Move selection/focus to the next row's same layer so user keeps typing
+      const nextLk = layerKey(focusPageId, focusRowIdx, layer);
+      const ed = useEditorStore.getState();
+      ed.navigateTo(focusPageId, nextLk);
+      ed.setSelection({
+        kind: "layer",
+        key: nextLk,
+        pageId: focusPageId,
+        rowIndex: focusRowIdx,
+        layerKind: layer,
+      });
+      ed.setActiveTool("type");
       return;
     }
 
