@@ -338,18 +338,32 @@ export function Workspace() {
                             transition: "width 100ms ease-out, height 100ms ease-out",
                           }}
                         >
-                          <div
-                            style={{
-                              position: "absolute",
-                              left: 0,
-                              top: 0,
-                              transform: `scale(${zoom / 100})`,
-                              transformOrigin: "top left",
-                              transition: "transform 100ms ease-out",
-                            }}
-                          >
-                            <Artboard page={active} zoom={zoom / 100} />
-                          </div>
+                          {/* 3-page virtualization window: prev (hidden) | active | next (hidden).
+                              Pre-mounting prev/next keeps page navigation instant — React.memo on
+                              Artboard skips re-render when the page reference is stable. */}
+                          {[
+                            { p: activeIdx > 0 ? pages[activeIdx - 1] : null, visible: false, k: "prev" },
+                            { p: active, visible: true, k: "active" },
+                            { p: activeIdx < pages.length - 1 ? pages[activeIdx + 1] : null, visible: false, k: "next" },
+                          ].map(({ p, visible, k }) =>
+                            p ? (
+                              <div
+                                key={`${k}-${p.id}`}
+                                style={{
+                                  position: "absolute",
+                                  left: 0,
+                                  top: 0,
+                                  transform: `scale(${zoom / 100})`,
+                                  transformOrigin: "top left",
+                                  transition: "transform 100ms ease-out",
+                                  visibility: visible ? "visible" : "hidden",
+                                  pointerEvents: visible ? "auto" : "none",
+                                }}
+                              >
+                                <Artboard page={p} zoom={zoom / 100} />
+                              </div>
+                            ) : null,
+                          )}
                         </div>
                       </div>
 
