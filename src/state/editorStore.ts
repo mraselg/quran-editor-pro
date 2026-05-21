@@ -62,7 +62,7 @@ type EditorState = {
 export const useEditorStore = create<EditorState>((set) => ({
   editMode: false,
   activeTool: "select",
-  scope: "page",
+  scope: "general",
   legacyScope: "local",
 
   selection: null,
