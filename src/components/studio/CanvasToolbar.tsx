@@ -59,14 +59,26 @@ export function CanvasToolbar({
   const entries = useHistoryStore((s) => s.entries);
   const [histOpen, setHistOpen] = useState(false);
   const histRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Position popover under button using fixed coords (escapes overflow:hidden parents)
+  useLayoutEffect(() => {
+    if (!histOpen || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const width = 320;
+    setPopPos({ top: r.bottom + 4, left: Math.max(8, r.right - width) });
+  }, [histOpen]);
 
   // Close dropdown on outside click
   useEffect(() => {
     if (!histOpen) return;
     const handler = (e: MouseEvent) => {
-      if (histRef.current && !histRef.current.contains(e.target as Node)) {
-        setHistOpen(false);
-      }
+      const t = e.target as Node;
+      if (histRef.current?.contains(t)) return;
+      if (popRef.current?.contains(t)) return;
+      setHistOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
