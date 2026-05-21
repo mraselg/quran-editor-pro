@@ -502,8 +502,7 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
             }}
           >
             {scope === "page" ? "পেজ সিলেক্ট" :
-             scope === "surah" ? "সূরা সিলেক্ট" :
-             scope === "para" ? "পারা সিলেক্ট" : "সব সিলেক্ট"}
+             scope === "surah" ? "সূরা সিলেক্ট" : "সব সিলেক্ট"}
           </div>
         </div>
       )}
