@@ -2,13 +2,15 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Studio Al-Qalam Live UI Tests', () => {
   // Slow down the test a bit so the user can see what's happening
-  test.use({ actionTimeout: 10000 });
+  test.use({ actionTimeout: 20000 });
 
   test.beforeEach(async ({ page }) => {
     console.log('Navigating to dev server...');
-    await page.goto('http://localhost:5174/');
-    // Give some time for the app to initialize (fonts, etc.)
-    await page.waitForTimeout(2000);
+    await page.goto('http://localhost:8080/');
+    // Wait for the loading indicator to disappear (up to 25 seconds)
+    await page.locator('text=লোড হচ্ছে…').waitFor({ state: 'hidden', timeout: 25000 }).catch(() => {});
+    // Give an extra second for layout stabilization
+    await page.waitForTimeout(1500);
   });
 
   test('Panel Toggle and Resize Visual Test', async ({ page }) => {

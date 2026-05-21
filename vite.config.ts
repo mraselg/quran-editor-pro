@@ -7,6 +7,10 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
+    server: {
+      port: 8080,
+      strictPort: true,
+    },
     // react-window is a CommonJS module. Force-bundle it as ESM for SSR so
     // named exports (FixedSizeList) resolve correctly in the server module runner.
     optimizeDeps: {
