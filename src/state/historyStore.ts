@@ -4,6 +4,11 @@ import type { SelectionScope } from "./editorStore";
 import type { GlobalOverrides, LocalOverride } from "./overridesStore";
 
 /* ─── Types ──────────────────────────────────────────────────────── */
+export type HistorySnapshot = {
+  global: GlobalOverrides;
+  local: Record<string, LocalOverride>;
+};
+
 export type HistoryEntry = {
   id: string;
   ts: number;
@@ -17,11 +22,10 @@ export type HistoryEntry = {
   field: string;
   before: unknown;
   after: unknown;
-  /** Full snapshot of override state at time of change */
-  snapshot: {
-    global: GlobalOverrides;
-    local: Record<string, LocalOverride>;
-  };
+  /** Snapshot of override state BEFORE this change (used for "preview-previous") */
+  beforeSnapshot: HistorySnapshot;
+  /** Snapshot of override state AFTER this change (used for "restore") */
+  snapshot: HistorySnapshot;
 };
 
 const MAX_ENTRIES = 200;
@@ -45,6 +49,21 @@ export const FIELD_LABELS_BN: Record<string, string> = {
   align:         "সারিবদ্ধতা",
 };
 
+/** Default values for character/paragraph fields — used to skip "no-op" history
+ *  entries when a control merely echoes its default on first interaction. */
+const FIELD_DEFAULTS: Record<string, unknown> = {
+  dx: 0,
+  dy: 0,
+  fontPx: 0,
+  leading: 0,
+  tracking: 0,
+  baseline: 0,
+  vScale: 100,
+  hScale: 100,
+  align: "justify",
+  scale: 1,
+};
+
 export function formatVal(v: unknown): string {
   if (v === undefined || v === null) return "—";
   if (typeof v === "number") return String(Math.round(v * 100) / 100);
@@ -60,118 +79,17 @@ function relativeTime(ts: number): string {
 }
 export { relativeTime };
 
+/* ─── Silent / suppress mode (used during inline text edits) ───────
+ * When _silent > 0, captureHistory becomes a no-op. Call beginSilent()
+ * before a burst of edits and endSilent() to re-enable capture. */
+let _silent = 0;
+export function beginSilent() { _silent += 1; }
+export function endSilent() { _silent = Math.max(0, _silent - 1); }
+export function isSilent() { return _silent > 0; }
+
 /* ─── Store ──────────────────────────────────────────────────────── */
 type HistoryState = {
   entries: HistoryEntry[];
   /** Push a new entry — auto-evicts oldest when over MAX_ENTRIES */
   push: (entry: Omit<HistoryEntry, "id" | "ts">) => void;
-  /** Restore overridesStore to a specific snapshot */
-  restoreTo: (id: string) => void;
-  /** Clear all history */
-  clear: () => void;
-};
-
-export const useHistoryStore = create<HistoryState>()(
-  persist(
-    (set, get) => ({
-      entries: [],
-
-      push: (entry) => {
-        const newEntry: HistoryEntry = {
-          ...entry,
-          id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          ts: Date.now(),
-        };
-        set((s) => ({
-          entries:
-            s.entries.length >= MAX_ENTRIES
-              ? [...s.entries.slice(1), newEntry]
-              : [...s.entries, newEntry],
-        }));
-      },
-
-      restoreTo: (id) => {
-        const entry = get().entries.find((e) => e.id === id);
-        if (!entry) return;
-        import("./overridesStore").then(({ useOverridesStore, setRestoringHistory }) => {
-          const store = useOverridesStore.getState();
-          // Guard: disable history capture during this restoration
-          setRestoringHistory(true);
-          try {
-            // Step 1: clear all current overrides
-            store.resetAll();
-            // Step 2: re-apply local overrides from snapshot
-            const localEntries = Object.entries(entry.snapshot.local);
-            for (const [k, v] of localEntries) {
-              store.patchLocal(k, v);
-            }
-            // Step 3: re-apply global overrides from snapshot
-            const g = entry.snapshot.global;
-            if (g.arabicFontPx  !== undefined) store.setGlobal("arabicFontPx",  g.arabicFontPx);
-            if (g.banglaFontPx  !== undefined) store.setGlobal("banglaFontPx",  g.banglaFontPx);
-            if (g.arabicYOffset !== undefined) store.setGlobal("arabicYOffset", g.arabicYOffset);
-            if (g.banglaYOffset !== undefined) store.setGlobal("banglaYOffset", g.banglaYOffset);
-            if (g.symbolYOffset !== undefined) store.setGlobal("symbolYOffset", g.symbolYOffset);
-            if (g.symbolScale   !== undefined) store.setGlobal("symbolScale",   g.symbolScale);
-            if (g.rowSpacing    !== undefined) store.setGlobal("rowSpacing",    g.rowSpacing);
-          } finally {
-            setRestoringHistory(false);
-          }
-        });
-      },
-
-      clear: () => set({ entries: [] }),
-    }),
-    {
-      name: "studio-history-v1",
-      partialize: (s) => ({ entries: s.entries.slice(-50) }), // persist only last 50
-    },
-  ),
-);
-
-/* ─── Auto-capture hook (call from overridesStore after mutations) ─ */
-export function captureHistory(
-  field: string,
-  before: unknown,
-  after: unknown,
-  scope: SelectionScope,
-  pageId?: string,
-  rowIndex?: number,
-  layerKey?: string,
-) {
-  // Lazy import to avoid circular deps
-  import("./overridesStore").then(({ useOverridesStore }) => {
-    const s = useOverridesStore.getState();
-    // Skip if no actual change
-    if (before === after) return;
-    const fieldLabelBn = FIELD_LABELS_BN[field] ?? field;
-    // For text changes, show a truncated preview instead of full old→new
-    let labelBn: string;
-    let label: string;
-    if (field === "text") {
-      const preview = String(after ?? "").slice(0, 20) + (String(after ?? "").length > 20 ? "…" : "");
-      labelBn = `টেক্সট পরিবর্তন: "${preview}"`;
-      label = `text: "${preview}"`;
-    } else {
-      const beforeStr = formatVal(before);
-      const afterStr = formatVal(after);
-      labelBn = `${fieldLabelBn}: ${beforeStr} → ${afterStr}`;
-      label = `${field}: ${beforeStr} → ${afterStr}`;
-    }
-    useHistoryStore.getState().push({
-      label,
-      labelBn,
-      scope,
-      pageId,
-      rowIndex,
-      layerKey,
-      field,
-      before,
-      after,
-      snapshot: {
-        global: { ...s.global },
-        local: { ...s.local },
-      },
-    });
-  });
-}
+  /** Restore overrid
