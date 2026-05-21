@@ -271,21 +271,16 @@ function HistoryItem({ entry, onClose }: { entry: HistoryEntry; onClose: () => v
     e.stopPropagation();
     if (countdown !== null) return;
 
-    // Snapshot current full state
+    // Capture current full state so we can restore after 5s
     const currentSnapshot = {
       local: JSON.parse(JSON.stringify(useOverridesStore.getState().local)),
       global: JSON.parse(JSON.stringify(useOverridesStore.getState().global)),
     };
 
-    // Apply before value for this specific field safely
-    if (entry.layerKey && entry.field) {
-      import("@/state/overridesStore").then(({ setRestoringHistory }) => {
-        setRestoringHistory(true);
-        useOverridesStore.getState().patchLocal(entry.layerKey!, {
-          [entry.field]: entry.before as never,
-        });
-        setRestoringHistory(false);
-      });
+    // Apply the BEFORE snapshot from this history entry (whole-state replay).
+    // This handles text edits, transforms, and global changes consistently.
+    if (entry.beforeSnapshot) {
+      useHistoryStore.getState().applySnapshot(entry.beforeSnapshot);
     }
 
     // 5-second countdown
@@ -298,27 +293,8 @@ function HistoryItem({ entry, onClose }: { entry: HistoryEntry; onClose: () => v
         clearInterval(timerRef.current!);
         timerRef.current = null;
         setCountdown(null);
-        import("@/state/overridesStore").then(({ setRestoringHistory }) => {
-          setRestoringHistory(true);
-          try {
-            // Restore current overrides
-            useOverridesStore.getState().resetAll();
-            Object.entries(currentSnapshot.local).forEach(([k, v]) =>
-              useOverridesStore.getState().patchLocal(k, v as never)
-            );
-            // Re-apply globals
-            const g = currentSnapshot.global as any;
-            if (g.arabicFontPx  !== undefined) useOverridesStore.getState().setGlobal("arabicFontPx",  g.arabicFontPx);
-            if (g.banglaFontPx  !== undefined) useOverridesStore.getState().setGlobal("banglaFontPx",  g.banglaFontPx);
-            if (g.arabicYOffset !== undefined) useOverridesStore.getState().setGlobal("arabicYOffset", g.arabicYOffset);
-            if (g.banglaYOffset !== undefined) useOverridesStore.getState().setGlobal("banglaYOffset", g.banglaYOffset);
-            if (g.symbolYOffset !== undefined) useOverridesStore.getState().setGlobal("symbolYOffset", g.symbolYOffset);
-            if (g.symbolScale   !== undefined) useOverridesStore.getState().setGlobal("symbolScale",   g.symbolScale);
-            if (g.rowSpacing    !== undefined) useOverridesStore.getState().setGlobal("rowSpacing",    g.rowSpacing);
-          } finally {
-            setRestoringHistory(false);
-          }
-        });
+        // Restore the user's pre-preview state via the same snapshot mechanism
+        useHistoryStore.getState().applySnapshot(currentSnapshot);
       }
     }, 1000);
   };

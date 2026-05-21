@@ -175,9 +175,9 @@ export const FabricLines = memo(function FabricLines({
                 cursor: isTypeTool ? "pointer" : "default",
               }}
             >
-              {slot.arabic && (
+              {(aText || slot.arabic) && (
                 <TopSymbolLayer
-                  arabic={slot.arabic}
+                  arabic={slot.arabic ?? aText}
                   arabicSpanRef={arabicSpanRef}
                   width={width}
                   height={L.symH}
@@ -400,11 +400,15 @@ function InlineTextEditor({
       }
     } catch { /* ignore */ }
 
-    // On unmount: save if not already saved + clear externalRef
+    // On unmount: save if not already saved.
+    // Use the closure `el` (ref.current may be null at unmount time).
+    // Guard against accidental blank save when user didn't intentionally clear text.
     return () => {
       if (externalRef && externalRef.current === el) externalRef.current = null;
       if (!committedRef.current) {
-        const text = ref.current?.textContent ?? "";
+        const text = el.textContent ?? "";
+        if (text === "" && initialText !== "") return; // skip lost-edit blank
+        if (text === initialText) return; // nothing changed
         onSave(text);
       }
     };
