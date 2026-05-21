@@ -106,11 +106,67 @@ export class BrowserDAL implements QuranDAL {
 }
 
 /**
- * Singleton DAL instance.
- * In the future: replace with ElectronDAL when running in Electron.
+ * Runtime DAL selection.
+ * - Electron: window.electronAPI is injected by preload.cjs → use ElectronDAL
+ * - Browser:  window.electronAPI is undefined → use BrowserDAL
+ *
+ * Returns BrowserDAL synchronously (always safe).
+ * ElectronDAL is lazily loaded via async getElectronDAL() below.
+ */
+export function pickDAL(): QuranDAL {
+  // In Electron, window.electronAPI will be available on first render.
+  // We detect it and return a lazy ElectronDAL wrapper.
+  if (
+    typeof window !== "undefined" &&
+    (window as Window).electronAPI !== undefined
+  ) {
+    return new ElectronDALProxy();
+  }
+  return new BrowserDAL();
+}
+
+/**
+ * ElectronDALProxy — lightweight synchronous proxy.
+ * Delegates to the real ElectronDAL (loaded via dynamic import) on first call.
+ * Falls back to BrowserDAL if electronAPI is unavailable.
+ *
+ * This avoids require() in ESM and avoids top-level await.
+ */
+class ElectronDALProxy implements QuranDAL {
+  private _impl: QuranDAL | null = null;
+
+  private async impl(): Promise<QuranDAL> {
+    if (this._impl) return this._impl;
+    try {
+      const { ElectronDAL } = await import("./dal.electron");
+      this._impl = new ElectronDAL();
+      console.log("[DAL] ElectronDAL loaded — using SQLite via IPC");
+    } catch {
+      this._impl = new BrowserDAL();
+      console.warn("[DAL] ElectronDAL failed — falling back to BrowserDAL");
+    }
+    return this._impl;
+  }
+
+  async loadVerses(surah?: number) { return (await this.impl()).loadVerses(surah); }
+  async getPage(pageId: string) { return (await this.impl()).getPage(pageId); }
+  async getPageRange(f: number, t: number) { return (await this.impl()).getPageRange(f, t); }
+  async getSurahPages(s: number) { return (await this.impl()).getSurahPages(s); }
+  async getTotalPages() { return (await this.impl()).getTotalPages(); }
+}
+
+/**
+ * Singleton DAL instance — auto-selects backend at runtime.
  *
  * Usage:
  *   import { dal } from "@/data/dal";
- *   const page = await dal.getPage("vpage-1");
+ *   const verses = await dal.loadVerses(2);  // works in both browser & Electron
  */
-export const dal: QuranDAL = new BrowserDAL();
+export const dal: QuranDAL = (() => {
+  try {
+    return pickDAL();
+  } catch {
+    // Fallback to BrowserDAL if pickDAL fails (e.g. during SSR)
+    return new BrowserDAL();
+  }
+})();

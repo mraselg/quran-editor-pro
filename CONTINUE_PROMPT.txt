@@ -6,7 +6,7 @@
 GITHUB REPOSITORY:
   https://github.com/mraselg/quran-editor-pro
 
-LATEST COMMIT (as of 2026-05-21):
+LATEST COMMIT (as of 2026-05-22):
   4e91471 — feat: performance optimizations (Canvas measurement, Virtualized
             PageList, Diff history, DAL, Optimistic Reflow)
 
@@ -19,107 +19,40 @@ built with:
   - TanStack Start (React meta-framework with file-based routing)
   - Zustand (state management) + zundo (temporal/undo middleware)
   - Tailwind CSS v4
-  - Fabric.js (Canvas-based artboard)
+  - react-window v2 (virtualized PageList — 1740 pages)
 
-The app renders 600+ pages of the full Quran, allowing per-row, per-page,
+The app renders 1740 pages of the full Quran, allowing per-row, per-page,
 per-surah, and global overrides of Arabic/Bangla font sizes, positions,
 and tajweed symbols.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-COMPLETED WORK (in latest commit)
+VERIFIED WORKING (as of 2026-05-22)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. [DONE] Canvas Text Measurement (src/lib/canvasMeasure.ts) [NEW FILE]
-   - Replaced hidden DOM <span> offsetWidth layout thrashing with
-     OffscreenCanvas.measureText() — ~1000x faster
-   - src/lib/textReflow.ts — measureTextWidth() now delegates to canvas
-   - src/lib/quranLayout.ts — setFont()/measure() now use canvasMeasure
+All of the following have been browser-tested and confirmed working:
 
-2. [DONE] History Diff/Patch (src/state/historyStore.ts) [REWRITTEN]
-   - Old: saved full beforeSnapshot + snapshot (2x full state copy per entry)
-   - New: saves only { field, layerKey, before, after } per entry (patch)
-   - Migrated storage key: "studio-history-v2" → "studio-history-v3"
-   - src/components/studio/CanvasToolbar.tsx updated for new API
-
-3. [DONE] PageList Virtualization (src/components/studio/PageList.tsx) [REWRITTEN]
-   - Installed: react-window + @types/react-window
-   - Now renders only ~10 visible items instead of 600+ DOM nodes
-   - ⚠ KNOWN ISSUE: TypeScript error (see "Your Next Steps" section below)
-
-4. [DONE] Optimistic + Idle Reflow (src/state/reflowStore.ts) [REWRITTEN]
-   - Added rebuildPage(pageId) for instant single-page optimistic update
-   - Full rebuild now uses requestIdleCallback instead of setTimeout(0)
-   - 400ms debounce prevents rebuild during active slider dragging
-
-5. [DONE] Tajweed Canvas Math (src/tajweed/canvasMeasure.ts) [NEW FILE]
-   - Created Canvas-based char center measurement
-   - src/tajweed/measure.ts — Canvas is now primary, Range API is fallback
-
-6. [DONE] Data Access Layer (src/data/dal.ts) [NEW FILE]
-   - BrowserDAL interface wrapping existing JSON imports
-   - Future: ElectronDAL will implement same interface with SQLite
+[✓] App loads — 1740 Quran pages render with correct typography and borders
+[✓] Sidebar PageList virtualized scrolling — smooth, no DOM lag
+[✓] Arabic font size slider → instant reflow (no freeze)
+[✓] Bangla font size slider → instant reflow
+[✓] Ctrl+Z / Ctrl+Shift+Z Undo/Redo — works correctly
+[✓] History dropdown — shows Bengali labels e.g. "আরবি ফন্ট সাইজ: 50 → 66"
+[✓] "আগের" (Preview Before) button — shows old value for 5s then restores
+[✓] Tajweed symbols — properly positioned above Arabic characters
+[✓] No console errors (only hydration warning from browser extension attrs)
+[✓] Build: vite build exits code 0 — both client + SSR
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-YOUR NEXT STEPS (in order of priority)
+HOW TO START (for a new agent or new chat session)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-STEP 1 — Fix TypeScript Error in PageList.tsx  [HIGH PRIORITY]
-  Error:
-    src/components/studio/PageList.tsx(4,15): error TS2724:
-    '"react-window"' has no exported member named 'ListChildComponentProps'.
-    Did you mean 'CellComponentProps'?
+1. Install dependencies (if node_modules missing):
+     npm install
 
-  File to fix: src/components/studio/PageList.tsx
-  The correct import from @types/react-window is:
-    import type { ListChildComponentProps } from "react-window";
-  This IS exported per node_modules/@types/react-window/index.d.ts (line 14),
-  but there may be a tsconfig module resolution conflict. Check tsconfig.json
-  "moduleResolution" — if it is "bundler" or "node16", adjust accordingly.
-  Possible fix: import directly from "@types/react-window" or add
-  "skipLibCheck": true to tsconfig.json as a temporary workaround.
+2. Start dev server:
+     npm run dev -- --port 5174
 
-STEP 2 — Verify TypeScript is clean
-  Command: npx tsc --noEmit
-  Goal: zero errors
-
-STEP 3 — Start Dev Server and Manual Browser Test
-  Command: npm run dev -- --port 5174
-  App URL: http://localhost:5174/
-
-  Test checklist:
-  [ ] App loads successfully, Quran pages render
-  [ ] Sidebar PageList scrolls smoothly (600+ pages, virtualized)
-  [ ] Adjusting Arabic/Bangla font size slider → instant reflow, no freeze
-  [ ] Undo (Ctrl+Z) / Redo (Ctrl+Shift+Z) work correctly
-  [ ] History panel shows correct field labels in Bengali
-  [ ] "Preview Before" button in history panel shows old value for 5s then restores
-  [ ] Tajweed symbols appear above correct characters
-  [ ] No console errors related to OffscreenCanvas or font loading
-
-STEP 4 — Check overridesStore.ts imports (historyStore API)
-  File: src/state/overridesStore.ts
-  Verify that captureHistory() calls pass the correct params (field, before,
-  after, scope, pageId, rowIndex, layerKey). The new historyStore.ts changed
-  the HistoryEntry type — make sure no fields are missing.
-
-STEP 5 — Check MASTER_DEFAULTS export (required by historyStore.ts)
-  File: src/state/overridesStore.ts
-  historyStore.ts imports { MASTER_DEFAULTS, setRestoringHistory } from
-  overridesStore. Verify these are exported:
-    export const MASTER_DEFAULTS = { ... }
-    export function setRestoringHistory(v: boolean) { ... }
-    export function resetAll() { ... }  ← also needed by restoreToImpl
-
-STEP 6 — reflowStore: verify buildAllPages() import signature
-  File: src/state/reflowStore.ts
-  It imports: { buildAllPages, buildPagesFromVerses, loadAllVerses, pagesSync,
-               ARABIC_FONT_PX, BANGLA_FONT_PX }
-  Check src/data/pages.ts exports these exact names. Adjust as needed.
-
-STEP 7 — Push final fixes to GitHub
-  git add .
-  git commit -m "fix: TS errors, verify perf optimizations"
-  git push
+3. App URL: http://localhost:5174/
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FUTURE WORK (Phase 3 — NOT yet started)
@@ -141,36 +74,25 @@ FUTURE WORK (Phase 3 — NOT yet started)
     - Process each chunk in separate requestIdleCallback frames
     - Show progress indicator during chunked build
 
+[ ] Fix git push permission
+    - Current origin: https://github.com/ohidgazi00003-gif/QuranMakerV3
+    - Intended origin: https://github.com/mraselg/quran-editor-pro
+    - Run: git remote set-url origin https://github.com/mraselg/quran-editor-pro
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FILES REFERENCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  src/lib/canvasMeasure.ts         ← NEW: OffscreenCanvas text measurement
-  src/lib/textReflow.ts            ← UPDATED: uses canvas, not DOM span
-  src/lib/quranLayout.ts           ← UPDATED: uses canvasMeasure import
-  src/state/historyStore.ts        ← REWRITTEN: diff/patch based history
-  src/state/reflowStore.ts         ← REWRITTEN: rebuildPage + idleCallback
-  src/state/overridesStore.ts      ← check exports (MASTER_DEFAULTS etc.)
-  src/components/studio/PageList.tsx ← REWRITTEN: react-window virtualized
-  src/components/studio/CanvasToolbar.tsx ← UPDATED: new history API
-  src/tajweed/canvasMeasure.ts     ← NEW: Canvas char position for tajweed
-  src/tajweed/measure.ts           ← UPDATED: Canvas primary, Range fallback
-  src/data/dal.ts                  ← NEW: Data Access Layer interface
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HOW TO START (for a new agent or new chat session)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Clone the repo:
-     git clone https://github.com/mraselg/quran-editor-pro
-     cd quran-editor-pro
-
-2. Install dependencies:
-     npm install
-
-3. Start dev server:
-     npm run dev -- --port 5174
-
-4. Read this file fully, then start from "STEP 1" above.
+  src/lib/canvasMeasure.ts         ← OffscreenCanvas text measurement
+  src/lib/textReflow.ts            ← uses canvas, not DOM span
+  src/lib/quranLayout.ts           ← uses canvasMeasure import
+  src/state/historyStore.ts        ← diff/patch based history (v3)
+  src/state/reflowStore.ts         ← rebuildPage + idleCallback
+  src/state/overridesStore.ts      ← exports: MASTER_DEFAULTS, setRestoringHistory, resetAll
+  src/components/studio/PageList.tsx ← react-window v2 virtualized list (1740 pages)
+  src/components/studio/CanvasToolbar.tsx ← History dropdown with Bengali labels
+  src/tajweed/canvasMeasure.ts     ← Canvas char position for tajweed
+  src/tajweed/measure.ts           ← Canvas primary, Range fallback
+  src/data/dal.ts                  ← Data Access Layer interface
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
