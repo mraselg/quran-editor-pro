@@ -351,6 +351,7 @@ function InlineTextEditor({
   fontFamily,
   fontSize,
   availableWidth,
+  externalRef,
   onSave,
 }: {
   layerKey: string;
@@ -366,6 +367,7 @@ function InlineTextEditor({
   fontFamily: string;
   fontSize: number;
   availableWidth: number;
+  externalRef?: React.MutableRefObject<HTMLElement | null>;
   onSave: (text: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -381,6 +383,10 @@ function InlineTextEditor({
     el.textContent = initialText;
     el.focus();
 
+    // Expose this element to the parent so TopSymbolLayer's measurer
+    // can track character positions while editing.
+    if (externalRef) externalRef.current = el;
+
     // Place cursor at end
     try {
       const sel = window.getSelection();
@@ -394,8 +400,9 @@ function InlineTextEditor({
       }
     } catch { /* ignore */ }
 
-    // On unmount: save if not already saved
+    // On unmount: save if not already saved + clear externalRef
     return () => {
+      if (externalRef && externalRef.current === el) externalRef.current = null;
       if (!committedRef.current) {
         const text = ref.current?.textContent ?? "";
         onSave(text);
@@ -403,6 +410,7 @@ function InlineTextEditor({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   // ── Reflow helper ─────────────────────────────────────────────────────────
   const getReflowBase = () => ({
