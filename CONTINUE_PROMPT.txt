@@ -6,93 +6,103 @@
 GITHUB REPOSITORY:
   https://github.com/mraselg/quran-editor-pro
 
-LATEST COMMIT (as of 2026-05-22):
-  4e91471 — feat: performance optimizations (Canvas measurement, Virtualized
-            PageList, Diff history, DAL, Optimistic Reflow)
+LATEST COMMIT:
+  4eb7828 — feat: Electron SQLite stack scaffold (TASK 1-5 complete)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONTEXT: WHAT THIS PROJECT IS
+WHAT THIS PROJECT IS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-"Studio Al-Qalam" is a high-precision Quranic DTP (Desktop Publishing) editor
-built with:
-  - TanStack Start (React meta-framework with file-based routing)
-  - Zustand (state management) + zundo (temporal/undo middleware)
+"Studio Al-Qalam" is a high-precision Quranic DTP editor built with:
+  - TanStack Start (React, file-based routing)
+  - Zustand + zundo (state + undo/redo)
   - Tailwind CSS v4
-  - react-window v2 (virtualized PageList — 1740 pages)
-
-The app renders 1740 pages of the full Quran, allowing per-row, per-page,
-per-surah, and global overrides of Arabic/Bangla font sizes, positions,
-and tajweed symbols.
+  - react-window v2 (virtualized 1740-page list)
+  - Electron (desktop app, in progress)
+  - sql.js (pure-JS SQLite, no native build needed)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VERIFIED WORKING (as of 2026-05-22)
+COMPLETED ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-All of the following have been browser-tested and confirmed working:
-
-[✓] App loads — 1740 Quran pages render with correct typography and borders
-[✓] Sidebar PageList virtualized scrolling — smooth, no DOM lag
-[✓] Arabic font size slider → instant reflow (no freeze)
-[✓] Bangla font size slider → instant reflow
-[✓] Ctrl+Z / Ctrl+Shift+Z Undo/Redo — works correctly
-[✓] History dropdown — shows Bengali labels e.g. "আরবি ফন্ট সাইজ: 50 → 66"
-[✓] "আগের" (Preview Before) button — shows old value for 5s then restores
-[✓] Tajweed symbols — properly positioned above Arabic characters
-[✓] No console errors (only hydration warning from browser extension attrs)
-[✓] Build: vite build exits code 0 — both client + SSR
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HOW TO START (for a new agent or new chat session)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Install dependencies (if node_modules missing):
-     npm install
-
-2. Start dev server:
-     npm run dev -- --port 5174
-
-3. App URL: http://localhost:5174/
+[✓] TASK 1 — Git remote fixed (origin → mraselg/quran-editor-pro)
+[✓] TASK 2 — Electron deps installed: electron, @electron/packager, tsx, sql.js
+[✓] TASK 3 — SQLite scripts:
+              scripts/dump-pages.mjs  → reads verses.json → JSONL (6236 lines)
+              scripts/build-sqlite.cjs → builds electron/data.db via sql.js
+[✓] TASK 4 — Electron main process:
+              electron/main.cjs   — BrowserWindow + 5 ipcMain.handle() handlers
+              electron/preload.cjs — contextBridge → window.electronAPI
+[✓] TASK 5 — DAL updated:
+              src/data/dal.electron.ts    — ElectronDAL (delegates to window.electronAPI)
+              src/data/dal.ts             — ElectronDALProxy + pickDAL() runtime detection
+              src/global.d.ts             — window.electronAPI TypeScript types
+[✓] Web build clean: npm run build → exit 0 ✅
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FUTURE WORK (Phase 3 — NOT yet started)
+YOUR NEXT STEPS (in order)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[ ] SQLite Migration (Electron)
-    - Implement ElectronDAL in src/data/dal.ts using better-sqlite3 or Prisma
-    - Move verses.json (5.6 MB) to SQLite `verses` table
-    - Move pages.json to SQLite `pages` table
-    - Support LIMIT/OFFSET queries for lazy page loading
+STEP 1 — Generate the SQLite database (required before running Electron)
+  npm run electron:dump-pages    # creates scripts/verses-dump.jsonl
+  npm run electron:build-db      # creates electron/data.db  (6.3 MB)
 
-[ ] Custom Tajweed Icon Font (.woff2)
-    - Replace inline SVG tajweed symbols with a custom woff2 font
-    - Use Glyphr Studio or IcoMoon to create tajweed-symbols.woff2
-    - Update src/tajweed/svgMap.ts → fontCharMap.ts
+STEP 2 — Run the Electron app (TASK 6 — End-to-End Test)
+  Terminal 1:  npm run dev          # Vite dev server → http://localhost:5174
+  Terminal 2:  npm run electron:dev # Electron → loads localhost:5174
 
-[ ] Chunked Page Building (if buildAllPages() is still slow)
-    - If 600+ pages are slow to build, split into chunks of 50
-    - Process each chunk in separate requestIdleCallback frames
-    - Show progress indicator during chunked build
+  Expected console output in Electron:
+    [preload] electronAPI exposed on window ✓
+    [main] ✅ SQLite database opened: .../electron/data.db
+    [main]    Verse count: 6236
+    [DAL] ElectronDAL loaded — using SQLite via IPC   ← in renderer console
 
-[ ] Fix git push permission
-    - Current origin: https://github.com/ohidgazi00003-gif/QuranMakerV3
-    - Intended origin: https://github.com/mraselg/quran-editor-pro
-    - Run: git remote set-url origin https://github.com/mraselg/quran-editor-pro
+  Check in DevTools (renderer console):
+    - No errors
+    - "[DAL] ElectronDAL loaded" message visible
+    - Quran pages render correctly (via BrowserDAL — pages_meta table is empty)
+
+  NOTE: pages_meta table is EMPTY — page rendering still uses BrowserDAL
+        (pages are built in-memory from verses). This is correct for now.
+        Future work: populate pages_meta for full SQLite page serving.
+
+STEP 3 — TASK 7: Chunked Page Building
+  File: src/state/reflowStore.ts
+  Problem: buildAllPages() is synchronous, can block for ~200ms on 1740 pages.
+  Solution: split into 50-page chunks via requestIdleCallback.
+
+  See implementation plan for details.
+
+STEP 4 — TASK 8: Tajweed Icon Font (.woff2)
+  Requires Glyphr Studio or IcoMoon (external tool).
+  Low priority — skip unless user requests.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KEY FILES REFERENCE
+KEY FILES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  src/lib/canvasMeasure.ts         ← OffscreenCanvas text measurement
-  src/lib/textReflow.ts            ← uses canvas, not DOM span
-  src/lib/quranLayout.ts           ← uses canvasMeasure import
-  src/state/historyStore.ts        ← diff/patch based history (v3)
-  src/state/reflowStore.ts         ← rebuildPage + idleCallback
-  src/state/overridesStore.ts      ← exports: MASTER_DEFAULTS, setRestoringHistory, resetAll
-  src/components/studio/PageList.tsx ← react-window v2 virtualized list (1740 pages)
-  src/components/studio/CanvasToolbar.tsx ← History dropdown with Bengali labels
-  src/tajweed/canvasMeasure.ts     ← Canvas char position for tajweed
-  src/tajweed/measure.ts           ← Canvas primary, Range fallback
-  src/data/dal.ts                  ← Data Access Layer interface
+  electron/main.cjs              ← Electron main + ipcMain SQLite handlers
+  electron/preload.cjs           ← contextBridge → window.electronAPI
+  electron/data.db               ← SQLite DB (gitignored, generate locally)
+  scripts/dump-pages.mjs         ← verses.json → JSONL
+  scripts/build-sqlite.cjs       ← JSONL → data.db (sql.js)
+  src/data/dal.ts                ← QuranDAL interface + BrowserDAL + pickDAL()
+  src/data/dal.electron.ts       ← ElectronDAL (IPC bridge)
+  src/global.d.ts                ← window.electronAPI TypeScript types
+  src/state/reflowStore.ts       ← page rebuild (TASK 7 target)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HOW TO START FRESH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  git clone https://github.com/mraselg/quran-editor-pro
+  cd quran-editor-pro
+  npm install
+  npm run electron:dump-pages
+  npm run electron:build-db
+  # Terminal 1:
+  npm run dev
+  # Terminal 2:
+  npm run electron:dev
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
