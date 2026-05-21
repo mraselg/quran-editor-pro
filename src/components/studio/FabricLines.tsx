@@ -240,6 +240,7 @@ export const FabricLines = memo(function FabricLines({
                     fontFamily={arabicFamily}
                     fontSize={aFontPx}
                     availableWidth={width - 16}
+                    externalRef={arabicSpanRef as unknown as React.MutableRefObject<HTMLElement | null>}
                     onSave={(t) => patchLocal(aLk, { text: t })}
                   />
                 ) : (
