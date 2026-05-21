@@ -120,10 +120,10 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
 
   // Scope-based selection colors
   const SCOPE_COLORS: Record<string, string> = {
-    row: "#f59e0b", page: "#06b6d4", surah: "#8b5cf6", para: "#ec4899", global: "#10b981",
+    general: "#f59e0b", page: "#06b6d4", surah: "#8b5cf6", global: "#10b981",
   };
   const selColor = SCOPE_COLORS[scope] ?? "#f59e0b";
-  const showPageHighlight = editMode && selection && scope !== "row";
+  const showPageHighlight = editMode && selection && scope !== "general";
 
   // Re-measure overlay rects after layout (also on selection / overrides change)
   useEffect(() => {
