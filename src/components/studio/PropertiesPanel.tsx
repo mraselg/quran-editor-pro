@@ -403,6 +403,7 @@ function NumInput({
 function CharacterPanel({ selKey }: { selKey: string }) {
   const localMap = useOverridesStore((s) => s.local);
   const patchLocal = useOverridesStore((s) => s.patchLocal);
+  const scope = useEditorStore((s) => s.scope);
   const ov = localMap[selKey] ?? {};
 
   const fontPx   = ov.fontPx   ?? 0;
@@ -413,7 +414,7 @@ function CharacterPanel({ selKey }: { selKey: string }) {
   const baseline = ov.baseline ?? 0;
   const align    = ov.align    ?? "justify";
 
-  const set = (k: string, v: number | string) => patchLocal(selKey, { [k]: v } as any);
+  const set = (k: string, v: number | string) => { void patchScoped(selKey, { [k]: v } as never, scope); };
 
   const ALIGN_OPTIONS = [
     { value: "left",    icon: AlignLeft,    label: "বাম" },
