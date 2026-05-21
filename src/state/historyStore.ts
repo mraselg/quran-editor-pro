@@ -22,9 +22,9 @@ export type HistoryEntry = {
   field: string;
   before: unknown;
   after: unknown;
-  /** Snapshot of override state BEFORE this change (used for "preview-previous") */
+  /** Snapshot BEFORE the change (used for "preview-previous" 5s peek) */
   beforeSnapshot: HistorySnapshot;
-  /** Snapshot of override state AFTER this change (used for "restore") */
+  /** Snapshot AFTER the change (used for "restore") */
   snapshot: HistorySnapshot;
 };
 
@@ -49,9 +49,9 @@ export const FIELD_LABELS_BN: Record<string, string> = {
   align:         "সারিবদ্ধতা",
 };
 
-/** Default values for character/paragraph fields — used to skip "no-op" history
- *  entries when a control merely echoes its default on first interaction. */
-const FIELD_DEFAULTS: Record<string, unknown> = {
+/** Default per-field values. If a change is `undefined → default`, we treat it
+ *  as a no-op and skip pushing a history entry. */
+export const FIELD_DEFAULTS: Record<string, unknown> = {
   dx: 0,
   dy: 0,
   fontPx: 0,
@@ -79,9 +79,9 @@ function relativeTime(ts: number): string {
 }
 export { relativeTime };
 
-/* ─── Silent / suppress mode (used during inline text edits) ───────
- * When _silent > 0, captureHistory becomes a no-op. Call beginSilent()
- * before a burst of edits and endSilent() to re-enable capture. */
+/* ─── Silent mode (used during inline text edits / bulk restores) ──
+ *  Increment with beginSilent() and decrement with endSilent(). While > 0,
+ *  captureHistory() becomes a no-op. */
 let _silent = 0;
 export function beginSilent() { _silent += 1; }
 export function endSilent() { _silent = Math.max(0, _silent - 1); }
@@ -90,6 +90,150 @@ export function isSilent() { return _silent > 0; }
 /* ─── Store ──────────────────────────────────────────────────────── */
 type HistoryState = {
   entries: HistoryEntry[];
-  /** Push a new entry — auto-evicts oldest when over MAX_ENTRIES */
   push: (entry: Omit<HistoryEntry, "id" | "ts">) => void;
-  /** Restore overrid
+  /** Replay the snapshot AFTER a given entry. */
+  restoreTo: (id: string) => void;
+  /** Replay the snapshot BEFORE a given entry (used by preview-previous). */
+  applySnapshot: (snap: HistorySnapshot) => void;
+  clear: () => void;
+};
+
+async function applySnapshotImpl(snap: HistorySnapshot) {
+  const { useOverridesStore, setRestoringHistory } = await import("./overridesStore");
+  const store = useOverridesStore.getState();
+  setRestoringHistory(true);
+  try {
+    store.resetAll();
+    for (const [k, v] of Object.entries(snap.local)) {
+      store.patchLocal(k, v);
+    }
+    const g = snap.global;
+    if (g.arabicFontPx  !== undefined) store.setGlobal("arabicFontPx",  g.arabicFontPx);
+    if (g.banglaFontPx  !== undefined) store.setGlobal("banglaFontPx",  g.banglaFontPx);
+    if (g.arabicYOffset !== undefined) store.setGlobal("arabicYOffset", g.arabicYOffset);
+    if (g.banglaYOffset !== undefined) store.setGlobal("banglaYOffset", g.banglaYOffset);
+    if (g.symbolYOffset !== undefined) store.setGlobal("symbolYOffset", g.symbolYOffset);
+    if (g.symbolScale   !== undefined) store.setGlobal("symbolScale",   g.symbolScale);
+    if (g.rowSpacing    !== undefined) store.setGlobal("rowSpacing",    g.rowSpacing);
+  } finally {
+    setRestoringHistory(false);
+  }
+}
+
+export const useHistoryStore = create<HistoryState>()(
+  persist(
+    (set, get) => ({
+      entries: [],
+
+      push: (entry) => {
+        const newEntry: HistoryEntry = {
+          ...entry,
+          id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          ts: Date.now(),
+        };
+        set((s) => ({
+          entries:
+            s.entries.length >= MAX_ENTRIES
+              ? [...s.entries.slice(1), newEntry]
+              : [...s.entries, newEntry],
+        }));
+      },
+
+      restoreTo: (id) => {
+        const entry = get().entries.find((e) => e.id === id);
+        if (!entry) return;
+        void applySnapshotImpl(entry.snapshot);
+      },
+
+      applySnapshot: (snap) => { void applySnapshotImpl(snap); },
+
+      clear: () => set({ entries: [] }),
+    }),
+    {
+      name: "studio-history-v2",
+      partialize: (s) => ({ entries: s.entries.slice(-50) }),
+    },
+  ),
+);
+
+/* ─── Auto-capture hook (call from overridesStore after mutations) ─ */
+export function captureHistory(
+  field: string,
+  before: unknown,
+  after: unknown,
+  scope: SelectionScope,
+  pageId?: string,
+  rowIndex?: number,
+  layerKey?: string,
+) {
+  if (isSilent()) return;
+  // Skip true no-ops
+  if (before === after) return;
+  // Skip undefined → default-value transitions (these are noise from UI mount)
+  if (before === undefined && Object.prototype.hasOwnProperty.call(FIELD_DEFAULTS, field)) {
+    if (after === FIELD_DEFAULTS[field]) return;
+  }
+
+  void import("./overridesStore").then(({ useOverridesStore }) => {
+    const s = useOverridesStore.getState();
+
+    // Build the AFTER snapshot (current state)
+    const afterSnap: HistorySnapshot = {
+      global: { ...s.global },
+      local: { ...s.local },
+    };
+
+    // Build the BEFORE snapshot by undoing the single field change.
+    // This gives "preview-previous" a precise rollback target without
+    // requiring zundo's temporal store.
+    const beforeSnap: HistorySnapshot = {
+      global: { ...s.global },
+      local: { ...s.local },
+    };
+    if (layerKey) {
+      const cur = { ...(beforeSnap.local[layerKey] ?? {}) } as Record<string, unknown>;
+      if (before === undefined) delete cur[field];
+      else cur[field] = before;
+      if (Object.keys(cur).length === 0) {
+        const next = { ...beforeSnap.local };
+        delete next[layerKey];
+        beforeSnap.local = next;
+      } else {
+        beforeSnap.local = { ...beforeSnap.local, [layerKey]: cur as LocalOverride };
+      }
+    } else {
+      // global field
+      const g = { ...beforeSnap.global } as Record<string, unknown>;
+      if (before === undefined) delete g[field];
+      else g[field] = before;
+      beforeSnap.global = g as GlobalOverrides;
+    }
+
+    const fieldLabelBn = FIELD_LABELS_BN[field] ?? field;
+    let labelBn: string;
+    let label: string;
+    if (field === "text") {
+      const preview = String(after ?? "").slice(0, 20) + (String(after ?? "").length > 20 ? "…" : "");
+      labelBn = `টেক্সট পরিবর্তন: "${preview}"`;
+      label = `text: "${preview}"`;
+    } else {
+      const beforeStr = formatVal(before);
+      const afterStr = formatVal(after);
+      labelBn = `${fieldLabelBn}: ${beforeStr} → ${afterStr}`;
+      label = `${field}: ${beforeStr} → ${afterStr}`;
+    }
+    useHistoryStore.getState().push({
+      label,
+      labelBn,
+      scope,
+      pageId,
+      rowIndex,
+      layerKey,
+      field,
+      before,
+      after,
+      beforeSnapshot: beforeSnap,
+      snapshot: afterSnap,
+    });
+  });
+}
