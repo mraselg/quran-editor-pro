@@ -38,15 +38,33 @@ export function TopSymbolLayer({
   displayArabic,
   isEditing = false,
 }: Props) {
-  // The text to scan for tajweed rules: use the user-edited override text if available
-  const effectiveArabic = displayArabic ?? arabic;
   const layerRef = useRef<HTMLDivElement | null>(null);
+  const [liveText, setLiveText] = useState<string>(displayArabic ?? arabic ?? "");
   const [positions, setPositions] = useState<Array<TajweedMatch & { x: number }>>([]);
   const { isEnabled } = useTajweedRules();
   const localMap = useOverridesStore((s) => s.local);
   const gSymbolScale = useOverridesStore((s) => s.global.symbolScale) ?? 1;
   const editMode = useEditorStore((s) => s.editMode);
 
+  // Re-sync liveText when external props change (non-editing state)
+  useLayoutEffect(() => {
+    if (!isEditing) setLiveText(displayArabic ?? arabic ?? "");
+  }, [displayArabic, arabic, isEditing]);
+
+  // While editing, observe the contentEditable's text node and mirror it
+  // so tajweed symbols continue to track live keystrokes.
+  useLayoutEffect(() => {
+    if (!isEditing) return;
+    const el = arabicSpanRef.current;
+    if (!el) return;
+    const update = () => setLiveText(el.textContent ?? "");
+    update();
+    const mo = new MutationObserver(update);
+    mo.observe(el, { characterData: true, childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, [isEditing, arabicSpanRef]);
+
+  const effectiveArabic = liveText;
   const matches = useMemo(
     () => (effectiveArabic ? detectTajweed(effectiveArabic).filter((m) => isEnabled(m.symbol)) : []),
     [effectiveArabic, isEnabled],
