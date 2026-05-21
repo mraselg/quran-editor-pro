@@ -152,6 +152,18 @@ export const useHistoryStore = create<HistoryState>()(
     {
       name: "studio-history-v2",
       partialize: (s) => ({ entries: s.entries.slice(-50) }),
+      // Back-compat: map legacy scopes ("row" → "general", "para" → "global")
+      // for entries persisted before the scope simplification.
+      merge: (persisted, current) => {
+        const p = persisted as { entries?: HistoryEntry[] } | undefined;
+        const fixed = (p?.entries ?? []).map((e) => {
+          const sc = e.scope as unknown as string;
+          const mapped: SelectionScope =
+            sc === "row" ? "general" : sc === "para" ? "global" : (sc as SelectionScope);
+          return { ...e, scope: mapped };
+        });
+        return { ...current, entries: fixed };
+      },
     },
   ),
 );
