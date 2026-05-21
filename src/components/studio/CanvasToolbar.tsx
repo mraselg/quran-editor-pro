@@ -200,18 +200,6 @@ export function CanvasToolbar({
         {/* History dropdown */}
         <div className="relative" ref={histRef}>
           <button
-            onClick={() => setHistOpen((v) => !v)}
-            title="পরিবর্তনের ইতিহাস"
-            className={`relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
-              histOpen
-                ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
-                : "border-neutral-700 bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
-            }`}
-          >
-            <History className="h-3.5 w-3.5" />
-        {/* History dropdown */}
-        <div className="relative" ref={histRef}>
-          <button
             ref={btnRef}
             onClick={() => setHistOpen((v) => !v)}
             title="পরিবর্তনের ইতিহাস"
