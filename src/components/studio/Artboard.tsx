@@ -112,7 +112,9 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
   const boardRef = useRef<HTMLDivElement | null>(null);
   const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
   const [selRect, setSelRect] = useState<DOMRect | null>(null);
-  const localMap = useOverridesStore((s) => s.local);
+  // Targeted override snapshot: only re-measure when the selected/hovered keys' overrides change.
+  const selOverride = useOverridesStore((s) => (selection?.key ? s.local[selection.key] : undefined));
+  const hoverOverride = useOverridesStore((s) => (hover?.key ? s.local[hover.key] : undefined));
   const patchLocal = useOverridesStore((s) => s.patchLocal);
   const isTypeTool = editMode && activeTool === "type";
 
@@ -156,7 +158,7 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
     };
     setSelRect(measure(selection?.key));
     setHoverRect(measure(hover?.key));
-  }, [selection, hover, page, localMap, zoom]);
+  }, [selection, hover, page, selOverride, hoverOverride, zoom]);
 
   // Read which selectable element was clicked
   const readTarget = (e: React.MouseEvent | PointerEvent): Selection | null => {
