@@ -1,98 +1,101 @@
-# পারফরম্যান্স অপটিমাইজেশন প্ল্যান
+## সমস্যার মূল কারণ ও সমাধান পরিকল্পনা
 
-বর্তমান অবস্থা: শুধু `active` পেজ DOM-এ render হয় (`<Artboard page={active} />`), কিন্তু প্রতিটি keystroke / slider tick এ পুরো `Artboard` + ৯টি `FabricLines` row রি-রেন্ডার হচ্ছে কারণ store subscription গুলো coarse। তাই পারফরম্যান্স ইস্যুর আসল উৎস ভার্চুয়ালাইজেশন না — স্টেট সিলেক্টর এবং memoization।
-
-প্ল্যানটি ৩টি অংশে বিভক্ত। প্রতিটি ধাপ আলাদা commit হিসেবে যাবে যাতে regression সহজে ধরা যায়।
+কোড পড়ে দুটি বাগের রুট-কজ চিহ্নিত হয়েছে। তৃতীয় অংশে PC (Electron) অ্যাপ বানানোর রোডম্যাপ।
 
 ---
 
-## ১. রেন্ডারিং মডেল সিদ্ধান্ত (Canvas vs DOM)
+### ১) হিস্টোরি আইকনে ক্লিক করলে লিস্ট দেখা যাচ্ছে না
 
-বর্তমান DOM/HTML রেন্ডারার রাখা হবে — Canvas/Fabric.js-এ migrate করা **এই plan-এর scope বহির্ভূত** কারণ:
+**মূল কারণ — Overflow Clipping (CSS)**
 
-- আরবি shaping, RTL bidi, contentEditable inline edit, Tajweed SVG overlay, selection ring — সবই browser text engine-এর উপর নির্ভর। Canvas-এ এগুলো নতুন করে লিখতে হবে (~১-২ সপ্তাহ কাজ)।
-- বর্তমান bottleneck পরিমাপ না করে rewrite করলে একই slow code শুধু canvas-এ চলে যাবে।
-
-পরিবর্তে DOM-কে দ্রুততর করব selector + memoization দিয়ে। যদি এর পরেও ৬০ fps না পাওয়া যায়, তখন আলাদা প্ল্যানে Canvas migration প্রস্তাব করা হবে।
-
----
-
-## ২. ৩-পেজ ভার্চুয়ালাইজেশন (prev / active / next)
-
-বর্তমানে শুধু active পেজ render হয়, prev/next pre-render হয় না — পেজ switch করার সময় ~১৫০ms জ্যাঙ্ক দেখা যায়।
-
-পরিবর্তন:
-
-- `Workspace.tsx`-এ `<Artboard page={active} />` এর জায়গায় ৩টি Artboard render হবে:
-  - `prev` (visibility: hidden, pointer-events: none, absolute)
-  - `active` (visible)
-  - `next` (visibility: hidden)
-- React.memo + stable `page` reference থাকার কারণে hidden পেজগুলো শুধু একবার mount/render হবে।
-- পেজ switch → CSS class swap, কোনো নতুন mount নেই → instant navigation।
-- বাকি (n-3) পেজ unmounted, memory free।
-
-```text
-┌─ scroll container ──────────────────┐
-│  [prev hidden]  [active]  [next hidden] │
-└─────────────────────────────────────┘
+`src/components/studio/Workspace.tsx` (line 307):
+```tsx
+<main className="flex flex-1 flex-col overflow-hidden">
+  <CanvasToolbar ... />          {/* toolbar */}
+  <div className="... overflow-hidden">  {/* canvas area */}
 ```
 
+`CanvasToolbar`-এর ভিতরে History dropdown `position: absolute; top: full` দিয়ে toolbar-এর **নিচে** খোলে — কিন্তু parent `<main>`-এ `overflow-hidden` থাকায় ড্রপডাউনটি ক্লিপ হয়ে অদৃশ্য থাকে। বাটন কাজ করছে, state ঠিকই `histOpen=true` হচ্ছে, কিন্তু DOM-এ থাকলেও ভিউয়ে আসছে না।
+
+পাশাপাশি: history entries `localStorage` (`studio-history-v2`)-এ persist হয়; পুরোনো session-এ যদি clear হয়ে থাকে তবে badge count = 0 দেখাবে।
+
+**সমাধান:**
+- ড্রপডাউনকে **React Portal** (`createPortal` to `document.body`) দিয়ে রেন্ডার করা; বাটনের `getBoundingClientRect()` দিয়ে fixed positioning। এতে কোনো parent overflow আর প্রভাব ফেলবে না।
+- বিকল্প (lightweight): shadcn `Popover` / `DropdownMenu` component ব্যবহার — এগুলো Radix Portal-ভিত্তিক, একই সমস্যা স্বয়ংক্রিয়ভাবে এড়ায়।
+- "কোনো ইতিহাস নেই" empty-state ঠিকই আছে; কিন্তু history capture যেন স্কিপ না হয় সেটি §২ ঠিক হলে স্বয়ংক্রিয়ভাবে fix হবে।
+
 ---
 
-## ৩. State Selector + Memoization (আসল গতি বৃদ্ধি)
+### ২) আরবি/বাংলা টেক্সট এডিট করার পর পরিবর্তন এপ্লাই হচ্ছে না
 
-এটাই সবচেয়ে বড় win দেবে। সমস্যাগুলো:
+`src/components/studio/FabricLines.tsx`-এর `InlineTextEditor`-এ একাধিক race condition:
 
-**ক) `FabricLines` এ coarse subscription:**
+**ক) Blur না হয়েই unmount হলে stale text save হয়**
+
+User যখন অন্য রো-তে ক্লিক করেন, mousedown → selection change → editor unmount, কিন্তু `onBlur` কখনো ফায়ার করে না (DOM node ততক্ষণে gone)। তখন `useEffect` cleanup এ:
 ```ts
-const localMap = useOverridesStore((s) => s.local);  // পুরো object
+if (!committedRef.current) {
+  const text = el.textContent ?? "";
+  if (!(text === "" && initialText !== "")) onSave(text);
+}
 ```
-যেকোনো row override পরিবর্তনে সব ৯ row রি-রেন্ডার হয়। সমাধান: প্রতিটি row-কে আলাদা `<FabricRow>` কম্পোনেন্টে বের করে আনব, এবং সেই কম্পোনেন্ট shallow-equal selector দিয়ে শুধু নিজের row + layer override subscribe করবে।
+এখানে `onSave` হলো প্রথম রেন্ডারে capture-হওয়া closure — পরে যদি parent re-render-এ `aLk` বদলায় (যদিও সাধারণত বদলায় না), তবু `patchLocal` ঠিক key-তেই যায়। কিন্তু সমস্যা হলো **rAF queue cancel-এর timing**: `cancelAnimationFrame` করা হলেও আগে scheduled `checkOverflow` ইতিমধ্যে chase-করে `splitToFit` দিয়ে `el.textContent`-কে পুরোনো "fits" version-এ রিসেট করে দিতে পারে। ফলে cleanup-এর সময় DOM-এ user-এর শেষ টাইপ-করা টেক্সট নেই — পুরোনো (truncated/original) টেক্সটই save হয়।
 
-**খ) Global slider subscriptions:**
-`gArabic`, `gBangla`, `gArabicY` ইত্যাদি প্রতিটি render-এ পৃথক selector — Zustand-এ এটাই idiom, কিন্তু `useShallow` দিয়ে এক object selector-এ একত্রিত করলে allocation কমবে।
+**খ) `splitToFit` overflow path-এ DOM mutation কিন্তু commit হয় না**
 
-**গ) `Artboard` re-measure effect:**
-`useEffect([selection, hover, page, localMap, zoom])` — `localMap` change এ প্রতিবার re-measure চলে। `localMap`-এর জায়গায় শুধু `selection?.key` এবং `hover?.key`-এর override পরিবর্তন track করব।
+`checkOverflow` যখন overflow ডিটেক্ট করে, `patchLocal(lk, { text: fits })` করে আর `el.textContent = fits` সেট করে — কিন্তু `committedRef`-কে true করে না। তাই পরবর্তী blur-এ আবার অন্য টেক্সট save হতে পারে, বা onSave-এর last-write-wins-এ user-এর intent হারিয়ে যায়।
 
-**ঘ) Inline edit এ typing performance:**
-বর্তমানে `handleInput` overflow check + `splitToFit` করে প্রতিটি keystroke এ। এটা rAF-throttle করব — দ্রুত typing-এ শুধু শেষ frame পরিমাপ হবে।
+**গ) `useEffect([])` initialText capture-stale**
 
-**ঙ) `React.memo` audit:**
-`Artboard` ইতিমধ্যে memo, কিন্তু `page` prop প্রতি keystroke এ নতুন reference পেতে পারে যদি `useReflowStore` rebuild ট্রিগার হয়। নিশ্চিত করব `text` override শুধু DOM render path-এ যায়, `reflowStore.rebuild` এ ঢোকে না (এটা ইতিমধ্যে আছে — confirm করব)।
+Editor mount-এর সময় `el.textContent = initialText` সেট হয়। কিন্তু এর পরে যদি একই layerKey-তে অন্য কোথাও থেকে `text` override আসে (যেমন অন্য row-এর reflow পাশের row-এ overflow ঠেলে দেয়), editor-এর DOM সেটা reflect করে না — user টাইপ চালিয়ে গেলে stale value-এর উপর টাইপ হয়, blur-এ stale value save হয়।
 
-`Artboard` ভিতরের child কম্পোনেন্ট (`SlimHeader`, `SlimFooter`, `ArchedHeader`, `BismillahBox`, `SurahOpenBlock`) — `React.memo` দিয়ে wrap করব যাতে শুধু `FabricLines` portion update হয়।
+**ঘ) History capture skip**
 
----
+`patchLocal`-এ `text` field-এর জন্য `before` সব সময় `undefined` (initially)। `captureHistory("text", undefined, t, ...)`-এ `FIELD_DEFAULTS["text"]` নেই, তাই entry তৈরি **হওয়ার কথা**। কিন্তু যদি §২(ক) বা (খ)-র কারণে `patchLocal` কখনো নাও কল হয়, তখন history-তেও কিছু আসবে না — যা §১-এর "list খালি" উপসর্গের সাথে মিলে যায়।
 
-## পরিবর্তনের তালিকা
+**সমাধান:**
 
-| ফাইল | কাজ |
-|------|-----|
-| `Workspace.tsx` | ৩-পেজ window render (prev/active/next), visibility-toggle |
-| `FabricLines.tsx` | প্রতিটি row আলাদা `<FabricRow memo>`; row + 3 layer override fine-grained selector; `useShallow` দিয়ে global slider grouping |
-| `FabricLines.tsx` (InlineTextEditor) | `handleInput` rAF-throttle; overflow check একবারই/frame |
-| `Artboard.tsx` | Re-measure effect dependency সংকুচিত; child কম্পোনেন্টে `memo` |
-| `SlimHeader/SlimFooter/ArchedHeader/BismillahBox/SurahOpenBlock` | `React.memo` wrap |
-| `TopSymbolLayer.tsx` | `MutationObserver` throttle (rAF) |
-
-কোনো বিজনেস লজিক, store shape, undo/redo, বা UI পরিবর্তন হবে না — শুধু render path।
+1. **Single source of truth**: editor mount-এ একবারই `el.textContent` সেট করে, এরপর প্রতিটি keystroke-এ `patchLocal(lk, { text: el.textContent })` সরাসরি (rAF-throttled) — অর্থাৎ DOM-ই source, store-কে সিঙ্ক্রোনাসভাবে আপডেট রাখা।
+2. **Overflow path**-এ `splitToFit` চালানোর পর `committedRef = true` সেট করা, এবং user যদি আরও টাইপ করে তাহলে নতুন pass-এ আবার false করে cycle শুরু।
+3. **Cleanup-এর আগে pending rAF-কে synchronously flush** করা — cancel না করে `checkOverflow()` ডেকে ফেলা, যাতে শেষ টাইপ-করা টেক্সট store-এ যায়।
+4. **Selection-change-এ explicit commit**: `editorStore`-এর `setSelection` middleware থেকে আগের editing-layer-এর `commit()` কে আগে চালানো (custom event বা ref-registry দিয়ে)।
+5. **InlineTextEditor-এ `initialText` change detect**: যদি props-এর `initialText` editor-এর বর্তমান `textContent`-এর সাথে না মেলে এবং editor focused নয়, তবে DOM সিঙ্ক করা।
+6. **History**: `text` field-এর জন্য captureHistory-এ `before` value পেতে `useOverridesStore.getState().local[lk]?.text ?? slot.arabic` ব্যবহার (currently `beforeOverride[mainField]` থেকে আসে, যা প্রথম এডিটে undefined — labelBn-এ "—" → text" দেখায়, কিন্তু entry তৈরি হয়)।
 
 ---
 
-## ভেরিফিকেশন
+### ৩) টপ-সিম্বল (আয়াত নম্বর / sajda / ruku) সব সময় ফিক্সড রাখা
 
-১. Browser performance profiler (`browser--start_profiling`) দিয়ে আগে/পরে measure:
-   - একটি আরবি অক্ষর টাইপ → expected: <16ms commit time (এক frame)।
-   - Slider drag → 60 fps সারা time।
-   - পেজ next/prev → instant (কোনো mount cost নেই)।
-২. Live preview এ ৩ পেজে edit করে দেখব history, top symbol, reflow সব আগের মতই কাজ করছে।
-৩. React DevTools Profiler দিয়ে confirm করব শুধু active row রি-রেন্ডার হচ্ছে, পুরো `FabricLines` না।
+পূর্বের loop-এ `TopSymbolLayer.tsx` ও `FabricLines.tsx`-এ symbol positioning rules ছিল। text-edit এর পর reflow হলে নতুন `aText`-এর সাথে symbol position পুনরায় re-measure হওয়া উচিত। বর্তমানে `arabicSpanRef`-এর `MutationObserver` rAF-throttled — কিন্তু contenteditable editing-এ span unmount হয়ে যায় (editor div span-কে replace করে)। ফলে editor mode-এ symbol layer এর position-base hint missing।
+
+**সমাধান:** editor mode-এ symbol position freeze করে রাখা (last measured offsets cache); blur/commit-এর পর re-measure trigger।
 
 ---
 
-## ঝুঁকি ও সীমাবদ্ধতা
+### ৪) PC Desktop App হিসেবে প্যাকেজ করা
 
-- ৩-পেজ render → memory ব্যবহার ~৩x (acceptable, একেকটা পেজ ~৩MB DOM)।
-- Fine-grained selector ভুল হলে stale render হতে পারে — তাই প্রতিটি change-এর পর live verify আবশ্যক।
-- Canvas migration ভবিষ্যতে দরকার হলে আলাদা proposal দেব profile data সহ।
+**Stack:** Electron + `@electron/packager` (electron-builder নয় — sandbox-এ 7zip issue)।
+
+**Steps:**
+1. `vite.config.ts`-এ `base: './'` (file:// loading-এর জন্য)।
+2. `electron/main.cjs` তৈরি — `BrowserWindow` যা `dist/index.html` লোড করে; `contextIsolation: true`, `nodeIntegration: false`।
+3. `package.json`-এ `"main": "electron/main.cjs"`।
+4. Build: `vite build` → `@electron/packager . "QuranStudio" --platform=<linux|darwin|win32> --arch=x64`।
+5. Persistence: বর্তমানে `localStorage` ব্যবহৃত — Electron-এ পুরোপুরি কাজ করে; offline-ready।
+6. Cross-build: একই Linux box থেকে macOS/Windows zip বানানো যায় (installer চাইলে user-এর local-এ electron-builder)।
+
+---
+
+### Verification Plan
+
+1. **History dropdown**: Portal-এ মুভ করার পর toolbar-এর নিচে স্ক্রিনে visible হবে; একটি slider drag করে ও একটি text edit করে — দুটোই dropdown-এ আসবে।
+2. **Text edit**: একটি আরবি লাইনে টাইপ → অন্য রো-তে click → প্রথম রোতে নতুন টেক্সট থাকবে (page refresh-এর পরও, localStorage থেকে restore)।
+3. **Top symbol**: edit-এর আগে ও পরে আয়াত-নম্বর symbol-এর position একই থাকবে (visual diff)।
+4. **Console**: hydration mismatch ছাড়া নতুন error থাকবে না।
+
+### Files to change (build phase)
+- `src/components/studio/CanvasToolbar.tsx` — Portal for history dropdown
+- `src/components/studio/FabricLines.tsx` — InlineTextEditor commit logic
+- `src/state/historyStore.ts` — small label fix for text entries
+- `src/components/studio/TopSymbolLayer.tsx` — freeze during editor mode
+- (পরে) `electron/main.cjs`, `vite.config.ts`, `package.json` — desktop packaging

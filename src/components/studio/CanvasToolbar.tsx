@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -58,14 +59,26 @@ export function CanvasToolbar({
   const entries = useHistoryStore((s) => s.entries);
   const [histOpen, setHistOpen] = useState(false);
   const histRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Position popover under button using fixed coords (escapes overflow:hidden parents)
+  useLayoutEffect(() => {
+    if (!histOpen || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const width = 320;
+    setPopPos({ top: r.bottom + 4, left: Math.max(8, r.right - width) });
+  }, [histOpen]);
 
   // Close dropdown on outside click
   useEffect(() => {
     if (!histOpen) return;
     const handler = (e: MouseEvent) => {
-      if (histRef.current && !histRef.current.contains(e.target as Node)) {
-        setHistOpen(false);
-      }
+      const t = e.target as Node;
+      if (histRef.current?.contains(t)) return;
+      if (popRef.current?.contains(t)) return;
+      setHistOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -187,6 +200,7 @@ export function CanvasToolbar({
         {/* History dropdown */}
         <div className="relative" ref={histRef}>
           <button
+            ref={btnRef}
             onClick={() => setHistOpen((v) => !v)}
             title="পরিবর্তনের ইতিহাস"
             className={`relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
@@ -203,8 +217,12 @@ export function CanvasToolbar({
             )}
           </button>
 
-          {histOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-[320px] overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl">
+          {histOpen && popPos && typeof document !== "undefined" && createPortal(
+            <div
+              ref={popRef}
+              style={{ position: "fixed", top: popPos.top, left: popPos.left, width: 320, zIndex: 9999 }}
+              className="overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl"
+            >
               <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
                 <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300">
                   <Clock className="h-3 w-3" />পরিবর্তনের ইতিহাস
@@ -223,7 +241,8 @@ export function CanvasToolbar({
                   ))
                 )}
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
 
