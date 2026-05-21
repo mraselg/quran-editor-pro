@@ -159,6 +159,8 @@ function ControlsTab({ color, scope }: { color: string; scope: SelectionScope })
 
 function RowDetailSection({ color, selection }: { color: string; selection: import("@/state/editorStore").Selection }) {
   const patchLocal = useOverridesStore((s) => s.patchLocal);
+  const scope = useEditorStore((s) => s.scope);
+  const apply = (patch: Parameters<typeof patchLocal>[1]) => { void patchScoped(selection.key, patch, scope); };
   const local = useOverridesStore((s) => s.local[selection.key]);
   const dx = local?.dx ?? 0;
   const dy = local?.dy ?? 0;
@@ -171,19 +173,19 @@ function RowDetailSection({ color, selection }: { color: string; selection: impo
       </span>
       <div className="grid grid-cols-2 gap-3">
         <InlineField label="আরবি ফন্ট" value={fontPx} min={16} max={80}
-          onChange={(v) => patchLocal(selection.key, { fontPx: v })}
-          onReset={local?.fontPx !== undefined ? () => patchLocal(selection.key, { fontPx: undefined }) : undefined}
+          onChange={(v) => apply({ fontPx: v })}
+          onReset={local?.fontPx !== undefined ? () => apply({ fontPx: undefined }) : undefined}
           color={color} />
         <InlineField label="X অফসেট" value={dx} min={-100} max={100}
-          onChange={(v) => patchLocal(selection.key, { dx: v })}
-          onReset={local?.dx !== undefined ? () => patchLocal(selection.key, { dx: undefined }) : undefined}
+          onChange={(v) => apply({ dx: v })}
+          onReset={local?.dx !== undefined ? () => apply({ dx: undefined }) : undefined}
           color={color} />
         <InlineField label="Y অফসেট" value={dy} min={-100} max={100}
-          onChange={(v) => patchLocal(selection.key, { dy: v })}
-          onReset={local?.dy !== undefined ? () => patchLocal(selection.key, { dy: undefined }) : undefined}
+          onChange={(v) => apply({ dy: v })}
+          onReset={local?.dy !== undefined ? () => apply({ dy: undefined }) : undefined}
           color={color} />
       </div>
-      <button onClick={() => patchLocal(selection.key, { dx: undefined, dy: undefined, fontPx: undefined, scale: undefined })}
+      <button onClick={() => apply({ dx: undefined, dy: undefined, fontPx: undefined, scale: undefined })}
         className="mt-1 rounded border border-neutral-700 bg-neutral-800 py-1.5 text-[10px] font-semibold text-neutral-400 hover:bg-red-900/20 hover:text-red-400 transition-colors">
         এই সারি রিসেট করুন
       </button>
