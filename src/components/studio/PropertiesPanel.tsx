@@ -135,7 +135,7 @@ function ControlsTab({ color, scope }: { color: string; scope: SelectionScope })
       </Group>
 
       {/* Per-line section when row is selected */}
-      {selection && (scope === "page" || scope === "row") && (
+      {selection && (scope === "page" || scope === "general") && (
         <>
           <div className="h-px bg-neutral-800/50" />
           <RowDetailSection color={color} selection={selection} />
