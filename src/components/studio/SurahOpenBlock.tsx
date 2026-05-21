@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { ARABIC_FONT_PX, BANGLA_FONT_PX } from "./FabricLines";
 
 type Props = {
@@ -13,7 +14,7 @@ type Props = {
 };
 
 /** Compact 2-band surah opening: ornate SVG frame + name plate + bismillah strip. */
-export function SurahOpenBlock({
+export const SurahOpenBlock = memo(function SurahOpenBlock({
   surahName,
   revelation,
   ayah,
@@ -95,4 +96,4 @@ export function SurahOpenBlock({
       </div>
     </div>
   );
-}
+});

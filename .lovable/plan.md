@@ -1,85 +1,98 @@
-## লক্ষ্য
-Arabic/Bangla text edit, history actions, dynamic reflow, এবং top symbol alignment — এই ৪টা flow end-to-end ঠিক করা হবে এবং live preview-এ verify করা হবে।
+# পারফরম্যান্স অপটিমাইজেশন প্ল্যান
 
-## বর্তমানে চিহ্নিত সমস্যা
-1. **লাইন এডিট করার সময় লেখা হারিয়ে যাচ্ছে / apply হচ্ছে না**
-   - `InlineTextEditor` unmount হলে `onSave(text)` চালায়, কিন্তু edit চলাকালে selection/tool change হলে stale text save হতে পারে।
-   - `handleInput()` overflow detect হলে row text-কে `patchLocal()` দিয়ে silent update করছে, কিন্তু final commit path (`blur`/`Enter`) আর intermediate reflow path-এর মধ্যে mismatch আছে।
-   - `TopSymbolLayer` এখনো `slot.arabic` guard-এর ওপর render হচ্ছে, ফলে override text থাকলেও কিছু ক্ষেত্রে symbol layer stale source থেকে কাজ করে।
+বর্তমান অবস্থা: শুধু `active` পেজ DOM-এ render হয় (`<Artboard page={active} />`), কিন্তু প্রতিটি keystroke / slider tick এ পুরো `Artboard` + ৯টি `FabricLines` row রি-রেন্ডার হচ্ছে কারণ store subscription গুলো coarse। তাই পারফরম্যান্স ইস্যুর আসল উৎস ভার্চুয়ালাইজেশন না — স্টেট সিলেক্টর এবং memoization।
 
-2. **Arabic text change করলে full dynamic apply হচ্ছে না**
-   - `reflowFrom()` শুধু overflow push করে; underflow/backfill বা current row recompute symmetry নেই।
-   - `reflowStore.rebuild()` signature-এ text override ধরা হচ্ছে না; ফলে canonical page rebuild pipeline text edits সম্পর্কে অন্ধ।
-   - page data base text বনাম local override text—দুই source আলাদা আচরণ করছে।
+প্ল্যানটি ৩টি অংশে বিভক্ত। প্রতিটি ধাপ আলাদা commit হিসেবে যাবে যাতে regression সহজে ধরা যায়।
 
-3. **History features ঠিকমতো কাজ করছে না**
-   - History preview logic `CanvasToolbar`-এর ভিতরে local-only one-field patch করছে; `HistoryEntry.beforeSnapshot` থাকা সত্ত্বেও সেটা ব্যবহার করছে না।
-   - Preview restore manual reset/apply করছে, যা full snapshot-consistent নয়।
-   - History UX split হয়েছে `CanvasToolbar` আর `PropertiesPanel`-এ; behavior duplicate এবং inconsistent।
+---
 
-4. **Top symbols সবসময় fixed থাকছে না**
-   - `TopSymbolLayer`-এ measurement source `displayArabic/liveText`, কিন্তু icon render guard source `slot.arabic`; override/edited text-এর সাথে একীভূত নয়।
-   - edit mode-এ contentEditable ref বদলালে symbol measurement transiently miss করতে পারে।
+## ১. রেন্ডারিং মডেল সিদ্ধান্ত (Canvas vs DOM)
 
-5. **Inspector / selection flow edit stability-তে interfere করতে পারে**
-   - selection change হলে editing component remount/unmount হয়; commit timing নিয়ন্ত্রণ দুর্বল।
-   - Properties panel collapse ঠিক আছে, কিন্তু active selection churn কমাতে হবে।
+বর্তমান DOM/HTML রেন্ডারার রাখা হবে — Canvas/Fabric.js-এ migrate করা **এই plan-এর scope বহির্ভূত** কারণ:
 
-## implementation plan
-### 1) Text editing pipeline stabilize
-- `FabricLines.tsx`
-  - Arabic/Bangla displayed text-এর source একটিতে নামানো হবে: `effectiveText` = override text বা source text।
-  - `InlineTextEditor`-এ draft text local ref/state রাখা হবে যাতে unmount/blur/save সবসময় latest content commit করে।
-  - `onBlur`, `Escape`, `Enter`, overflow reflow — প্রতিটি path আলাদা role পাবে:
-    - typing = no history spam
-    - commit = single history entry
-    - overflow cascade = silent companion updates
-- stale save / empty save guard যোগ হবে যাতে accidental blank overwrite না হয়।
+- আরবি shaping, RTL bidi, contentEditable inline edit, Tajweed SVG overlay, selection ring — সবই browser text engine-এর উপর নির্ভর। Canvas-এ এগুলো নতুন করে লিখতে হবে (~১-২ সপ্তাহ কাজ)।
+- বর্তমান bottleneck পরিমাপ না করে rewrite করলে একই slow code শুধু canvas-এ চলে যাবে।
 
-### 2) Dynamic reflow fix
-- `textReflow.ts`
-  - overflow cascade logic refactor করে row-by-row deterministic function বানানো হবে
-  - current row split + next rows/pages push unified হবে
-  - empty/underflow cases safe করা হবে
-- `FabricLines.tsx`
-  - `Enter` press, live overflow, এবং final commit — তিনটাতেই একই reflow helper ব্যবহার হবে
-  - next row focus navigation preserved থাকবে
+পরিবর্তে DOM-কে দ্রুততর করব selector + memoization দিয়ে। যদি এর পরেও ৬০ fps না পাওয়া যায়, তখন আলাদা প্ল্যানে Canvas migration প্রস্তাব করা হবে।
 
-### 3) History system correct snapshot behavior
-- `CanvasToolbar.tsx`
-  - preview button logic manual patch/reset বাদ দিয়ে `beforeSnapshot`/`applySnapshot()` ভিত্তিক করা হবে
-  - restore/preview countdown robust করা হবে
-- `PropertiesPanel.tsx`
-  - history view behavior `CanvasToolbar`-এর সঙ্গে aligned করা হবে
-- প্রয়োজনে `previewStore.ts` আলাদা করে preview session state centralize করা হবে, যাতে 5-second preview, cancel, restore conflict-free হয়
+---
 
-### 4) Top symbol locking fix
-- `TopSymbolLayer.tsx`
-  - render condition `effectiveArabic`-এর ওপর নির্ভর করবে, `slot.arabic`-এর ওপর নয়
-  - live editing text + committed override text — দুই ক্ষেত্রেই same source থেকে tajweed detection চলবে
-  - measurement observer/mirror path harden করা হবে যাতে edit চলাকালে icons disappear/jump না করে
-- `FabricLines.tsx`
-  - symbol layer-এ edited Arabic text pass করা হবে canonicalভাবে
+## ২. ৩-পেজ ভার্চুয়ালাইজেশন (prev / active / next)
 
-### 5) Verification pass in live preview
-আমি live preview-এ এগুলো verify করব:
-1. Arabic word edit করলে লাইন blank না হয়
-2. edit blur/Enter-এর পর change apply থাকে
-3. overflow হলে পরের row/page-এ cascade হয়
-4. history preview আগের state 5s দেখায়, তারপর restore হয়
-5. history restore full state apply করে
-6. top symbols edited Arabic-এর ওপর fixed থাকে
-7. selection/history click-এর পর target row flash/navigate ঠিক থাকে
+বর্তমানে শুধু active পেজ render হয়, prev/next pre-render হয় না — পেজ switch করার সময় ~১৫০ms জ্যাঙ্ক দেখা যায়।
 
-## touchpoints
-- `src/components/studio/FabricLines.tsx`
-- `src/components/studio/TopSymbolLayer.tsx`
-- `src/lib/textReflow.ts`
-- `src/components/studio/CanvasToolbar.tsx`
-- `src/components/studio/PropertiesPanel.tsx`
-- optional: `src/state/historyStore.ts` / new `src/state/previewStore.ts`
+পরিবর্তন:
 
-## technical notes
-- History preview-তে single-field revert ব্যবহার না করে snapshot replay ব্যবহার করাই safest, কারণ text reflow multi-row side effects তৈরি করে
-- Top symbol positioning edited text-এর exact rendered DOM node থেকেই measure করতে হবে
-- text edits canonical page rebuild pipeline-কে avoid করে local override + reflow pipeline-এ deterministic রাখতে হবে, নইলে source-of-truth conflict হবে
+- `Workspace.tsx`-এ `<Artboard page={active} />` এর জায়গায় ৩টি Artboard render হবে:
+  - `prev` (visibility: hidden, pointer-events: none, absolute)
+  - `active` (visible)
+  - `next` (visibility: hidden)
+- React.memo + stable `page` reference থাকার কারণে hidden পেজগুলো শুধু একবার mount/render হবে।
+- পেজ switch → CSS class swap, কোনো নতুন mount নেই → instant navigation।
+- বাকি (n-3) পেজ unmounted, memory free।
+
+```text
+┌─ scroll container ──────────────────┐
+│  [prev hidden]  [active]  [next hidden] │
+└─────────────────────────────────────┘
+```
+
+---
+
+## ৩. State Selector + Memoization (আসল গতি বৃদ্ধি)
+
+এটাই সবচেয়ে বড় win দেবে। সমস্যাগুলো:
+
+**ক) `FabricLines` এ coarse subscription:**
+```ts
+const localMap = useOverridesStore((s) => s.local);  // পুরো object
+```
+যেকোনো row override পরিবর্তনে সব ৯ row রি-রেন্ডার হয়। সমাধান: প্রতিটি row-কে আলাদা `<FabricRow>` কম্পোনেন্টে বের করে আনব, এবং সেই কম্পোনেন্ট shallow-equal selector দিয়ে শুধু নিজের row + layer override subscribe করবে।
+
+**খ) Global slider subscriptions:**
+`gArabic`, `gBangla`, `gArabicY` ইত্যাদি প্রতিটি render-এ পৃথক selector — Zustand-এ এটাই idiom, কিন্তু `useShallow` দিয়ে এক object selector-এ একত্রিত করলে allocation কমবে।
+
+**গ) `Artboard` re-measure effect:**
+`useEffect([selection, hover, page, localMap, zoom])` — `localMap` change এ প্রতিবার re-measure চলে। `localMap`-এর জায়গায় শুধু `selection?.key` এবং `hover?.key`-এর override পরিবর্তন track করব।
+
+**ঘ) Inline edit এ typing performance:**
+বর্তমানে `handleInput` overflow check + `splitToFit` করে প্রতিটি keystroke এ। এটা rAF-throttle করব — দ্রুত typing-এ শুধু শেষ frame পরিমাপ হবে।
+
+**ঙ) `React.memo` audit:**
+`Artboard` ইতিমধ্যে memo, কিন্তু `page` prop প্রতি keystroke এ নতুন reference পেতে পারে যদি `useReflowStore` rebuild ট্রিগার হয়। নিশ্চিত করব `text` override শুধু DOM render path-এ যায়, `reflowStore.rebuild` এ ঢোকে না (এটা ইতিমধ্যে আছে — confirm করব)।
+
+`Artboard` ভিতরের child কম্পোনেন্ট (`SlimHeader`, `SlimFooter`, `ArchedHeader`, `BismillahBox`, `SurahOpenBlock`) — `React.memo` দিয়ে wrap করব যাতে শুধু `FabricLines` portion update হয়।
+
+---
+
+## পরিবর্তনের তালিকা
+
+| ফাইল | কাজ |
+|------|-----|
+| `Workspace.tsx` | ৩-পেজ window render (prev/active/next), visibility-toggle |
+| `FabricLines.tsx` | প্রতিটি row আলাদা `<FabricRow memo>`; row + 3 layer override fine-grained selector; `useShallow` দিয়ে global slider grouping |
+| `FabricLines.tsx` (InlineTextEditor) | `handleInput` rAF-throttle; overflow check একবারই/frame |
+| `Artboard.tsx` | Re-measure effect dependency সংকুচিত; child কম্পোনেন্টে `memo` |
+| `SlimHeader/SlimFooter/ArchedHeader/BismillahBox/SurahOpenBlock` | `React.memo` wrap |
+| `TopSymbolLayer.tsx` | `MutationObserver` throttle (rAF) |
+
+কোনো বিজনেস লজিক, store shape, undo/redo, বা UI পরিবর্তন হবে না — শুধু render path।
+
+---
+
+## ভেরিফিকেশন
+
+১. Browser performance profiler (`browser--start_profiling`) দিয়ে আগে/পরে measure:
+   - একটি আরবি অক্ষর টাইপ → expected: <16ms commit time (এক frame)।
+   - Slider drag → 60 fps সারা time।
+   - পেজ next/prev → instant (কোনো mount cost নেই)।
+২. Live preview এ ৩ পেজে edit করে দেখব history, top symbol, reflow সব আগের মতই কাজ করছে।
+৩. React DevTools Profiler দিয়ে confirm করব শুধু active row রি-রেন্ডার হচ্ছে, পুরো `FabricLines` না।
+
+---
+
+## ঝুঁকি ও সীমাবদ্ধতা
+
+- ৩-পেজ render → memory ব্যবহার ~৩x (acceptable, একেকটা পেজ ~৩MB DOM)।
+- Fine-grained selector ভুল হলে stale render হতে পারে — তাই প্রতিটি change-এর পর live verify আবশ্যক।
+- Canvas migration ভবিষ্যতে দরকার হলে আলাদা proposal দেব profile data সহ।

@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 type Props = {
   surahName: string;
   revelation: string;
@@ -5,7 +7,7 @@ type Props = {
   ruku: string;
 };
 
-export function ArchedHeader({ surahName, revelation, ayah, ruku }: Props) {
+export const ArchedHeader = memo(function ArchedHeader({ surahName, revelation, ayah, ruku }: Props) {
   return (
     <div className="relative">
       {/* ornament strip */}
@@ -33,4 +35,4 @@ export function ArchedHeader({ surahName, revelation, ayah, ruku }: Props) {
       </div>
     </div>
   );
-}
+});
