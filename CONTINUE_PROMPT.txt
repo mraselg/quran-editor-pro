@@ -1,108 +1,67 @@
-╔══════════════════════════════════════════════════════════════════════════════╗
-║          Studio Al-Qalam — Task Continuation Handoff Prompt                ║
-║          GitHub: https://github.com/mraselg/quran-editor-pro               ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+====================================================================
+STUDIO AL-QALAM — HANDOFF DOCUMENT
+Git Repo: https://github.com/mraselg/quran-editor-pro (branch: master)
+Last verified: 2026-05-23 | TSC: clean (exit 0) | Build: clean (exit 0)
+====================================================================
 
-GITHUB REPOSITORY:
-  https://github.com/mraselg/quran-editor-pro
+COMPLETED (verified in master):
+  Phase 1 — commit 275511f
+    - historyStore: session-only (no persist)
+    - PropertiesPanel: async Reset All with loading states
+    - localStorage old key cleanup on reset
 
-LATEST COMMIT:
-  4eb7828 — feat: Electron SQLite stack scaffold (TASK 1-5 complete)
+  Phase 2 — commit 11473d4
+    - overridesStore: arabicDx/Dy + banglaDx/Dy in LocalOverride
+    - FabricLines: per-layer independent offsets applied in FabricRow
+    - PropertiesPanel: Arabic X/Y and Bangla X/Y inputs in RowDetailSection
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WHAT THIS PROJECT IS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TSC Fix — commit 8b037e7
+    - dal.electron.ts: api() null-guard for window.electronAPI
+    - tsc --noEmit now exits 0
 
-"Studio Al-Qalam" is a high-precision Quranic DTP editor built with:
-  - TanStack Start (React, file-based routing)
-  - Zustand + zundo (state + undo/redo)
-  - Tailwind CSS v4
-  - react-window v2 (virtualized 1740-page list)
-  - Electron (desktop app, in progress)
-  - sql.js (pure-JS SQLite, no native build needed)
+NOT STARTED (for Lovable agent):
+  Phase 3A — backFillFrom()
+  Phase 3B — Smart Enter + LargeChangeGuard + ScopeImpactWarningDialog
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-COMPLETED ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+====================================================================
+CHECKER ROLE (Antigravity agent):
+  - Run: npx tsc --noEmit (must stay exit 0)
+  - Run: npm run build (must stay exit 0)
+  - Fix TypeScript errors only
+  - Create roadmap plans for Lovable agent — DO NOT implement features
 
-[✓] TASK 1 — Git remote fixed (origin → mraselg/quran-editor-pro)
-[✓] TASK 2 — Electron deps installed: electron, @electron/packager, tsx, sql.js
-[✓] TASK 3 — SQLite scripts:
-              scripts/dump-pages.mjs  → reads verses.json → JSONL (6236 lines)
-              scripts/build-sqlite.cjs → builds electron/data.db via sql.js
-[✓] TASK 4 — Electron main process:
-              electron/main.cjs   — BrowserWindow + 5 ipcMain.handle() handlers
-              electron/preload.cjs — contextBridge → window.electronAPI
-[✓] TASK 5 — DAL updated:
-              src/data/dal.electron.ts    — ElectronDAL (delegates to window.electronAPI)
-              src/data/dal.ts             — ElectronDALProxy + pickDAL() runtime detection
-              src/global.d.ts             — window.electronAPI TypeScript types
-[✓] Web build clean: npm run build → exit 0 ✅
+IMPLEMENTER ROLE (Lovable agent):
+  - Implement Phase 3A first, then 3B
+  - Follow behavior contract below
+  - git push after each phase
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-YOUR NEXT STEPS (in order)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+====================================================================
+PHASE 3 BEHAVIOR CONTRACT:
 
-STEP 1 — Generate the SQLite database (required before running Electron)
-  npm run electron:dump-pages    # creates scripts/verses-dump.jsonl
-  npm run electron:build-db      # creates electron/data.db  (6.3 MB)
+  3A: backFillFrom()
+      File: src/lib/textReflow.ts (add after reflowFrom)
+      File: src/components/studio/FabricLines.tsx (checkOverflow integration)
+      Rule: When delete leaves space > fontSize*0.8 → pull words from next row
+      Rule: Respects maxPageId boundary (scope-limited)
 
-STEP 2 — Run the Electron app (TASK 6 — End-to-End Test)
-  Terminal 1:  npm run dev          # Vite dev server → http://localhost:5174
-  Terminal 2:  npm run electron:dev # Electron → loads localhost:5174
+  3B: Smart Enter
+      scope=general  → push tail to row+1 only, no guard
+      scope=page     → cascade to page end, guard if rows >= 20
+      scope=surah    → ALWAYS show warning dialog first
+      scope=global   → ALWAYS show warning dialog first
 
-  Expected console output in Electron:
-    [preload] electronAPI exposed on window ✓
-    [main] ✅ SQLite database opened: .../electron/data.db
-    [main]    Verse count: 6236
-    [DAL] ElectronDAL loaded — using SQLite via IPC   ← in renderer console
+  Bengali strings (MUST NOT change):
+      SCOPE_LABEL_BN = { general:"সাধারণ", page:"পেজ", surah:"সূরা", global:"সকল" }
+      Dialog buttons: "না" | "হ্যাঁ, চালিয়ে যান"
 
-  Check in DevTools (renderer console):
-    - No errors
-    - "[DAL] ElectronDAL loaded" message visible
-    - Quran pages render correctly (via BrowserDAL — pages_meta table is empty)
+  New files to create:
+      src/hooks/useLargeChangeGuard.ts
+      src/components/studio/ScopeImpactWarningDialog.tsx
 
-  NOTE: pages_meta table is EMPTY — page rendering still uses BrowserDAL
-        (pages are built in-memory from verses). This is correct for now.
-        Future work: populate pages_meta for full SQLite page serving.
-
-STEP 3 — TASK 7: Chunked Page Building
-  File: src/state/reflowStore.ts
-  Problem: buildAllPages() is synchronous, can block for ~200ms on 1740 pages.
-  Solution: split into 50-page chunks via requestIdleCallback.
-
-  See implementation plan for details.
-
-STEP 4 — TASK 8: Tajweed Icon Font (.woff2)
-  Requires Glyphr Studio or IcoMoon (external tool).
-  Low priority — skip unless user requests.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KEY FILES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  electron/main.cjs              ← Electron main + ipcMain SQLite handlers
-  electron/preload.cjs           ← contextBridge → window.electronAPI
-  electron/data.db               ← SQLite DB (gitignored, generate locally)
-  scripts/dump-pages.mjs         ← verses.json → JSONL
-  scripts/build-sqlite.cjs       ← JSONL → data.db (sql.js)
-  src/data/dal.ts                ← QuranDAL interface + BrowserDAL + pickDAL()
-  src/data/dal.electron.ts       ← ElectronDAL (IPC bridge)
-  src/global.d.ts                ← window.electronAPI TypeScript types
-  src/state/reflowStore.ts       ← page rebuild (TASK 7 target)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HOW TO START FRESH
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  git clone https://github.com/mraselg/quran-editor-pro
-  cd quran-editor-pro
-  npm install
-  npm run electron:dump-pages
-  npm run electron:build-db
-  # Terminal 1:
-  npm run dev
-  # Terminal 2:
-  npm run electron:dev
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+====================================================================
+PHASE 4 IDEAS (after Phase 3 done — pick one):
+  A) Keyboard shortcuts: Alt+1/2/3/4 → scope switch
+  B) Persist scope per-surah in localStorage
+  C) Batch buildProgress updates (throttle with rAF for large globals)
+  D) Scope-tagged Undo/Redo (historyStore already has scope field)
+====================================================================
