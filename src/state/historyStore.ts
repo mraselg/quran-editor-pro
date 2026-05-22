@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import type { SelectionScope } from "./editorStore";
 import type { GlobalOverrides, LocalOverride } from "./overridesStore";
 
@@ -197,67 +196,34 @@ type HistoryState = {
 };
 
 export const useHistoryStore = create<HistoryState>()(
-  persist(
-    (set, get) => ({
-      entries: [],
+  (set, get) => ({
+    entries: [],
 
-      push: (entry) => {
-        const newEntry: HistoryEntry = {
-          ...entry,
-          id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          ts: Date.now(),
-        };
-        set((s) => ({
-          entries:
-            s.entries.length >= MAX_ENTRIES
-              ? [...s.entries.slice(1), newEntry]
-              : [...s.entries, newEntry],
-        }));
-      },
-
-      restoreTo: (id) => {
-        void restoreToImpl(get().entries, id);
-      },
-
-      applyPatchReverse: (patch) => { void applyPatchReverse(patch); },
-
-      // Back-compat: old callers passing a HistorySnapshot get patch-based undo
-      applySnapshot: (patch) => { void applyPatchReverse(patch); },
-
-      clear: () => set({ entries: [] }),
-    }),
-    {
-      name: "studio-history-v3",
-      // Persist only last 50 entries — patches are tiny so this is safe
-      partialize: (s) => ({ entries: s.entries.slice(-50) }),
-      // Migration: handle both old (v2 full-snapshot) and new (v3 patch) formats
-      merge: (persisted, current) => {
-        const p = persisted as { entries?: LegacyHistoryEntry[] } | undefined;
-        const fixed = (p?.entries ?? []).map((e): HistoryEntry => {
-          // Migrate legacy scope values
-          const sc = e.scope as unknown as string;
-          const mapped: SelectionScope =
-            sc === "row" ? "general" : sc === "para" ? "global" : (sc as SelectionScope);
-
-          // If this entry already has a patch (v3 format), keep it
-          if (e.patch) return { ...e, scope: mapped };
-
-          // Migrate from v2 full-snapshot format: reconstruct a patch from field/before/after
-          const patch: HistoryPatch = {
-            field: e.field,
-            layerKey: e.layerKey,
-            before: e.before,
-            after: e.after,
-          };
-          // Strip old snapshot fields to save memory
-          const { beforeSnapshot: _b, snapshot: _s, ...rest } = e as LegacyHistoryEntry;
-          void _b; void _s;
-          return { ...rest, scope: mapped, patch };
-        });
-        return { ...current, entries: fixed };
-      },
+    push: (entry) => {
+      const newEntry: HistoryEntry = {
+        ...entry,
+        id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        ts: Date.now(),
+      };
+      set((s) => ({
+        entries:
+          s.entries.length >= MAX_ENTRIES
+            ? [...s.entries.slice(1), newEntry]
+            : [...s.entries, newEntry],
+      }));
     },
-  ),
+
+    restoreTo: (id) => {
+      void restoreToImpl(get().entries, id);
+    },
+
+    applyPatchReverse: (patch) => { void applyPatchReverse(patch); },
+
+    // Back-compat: old callers passing a HistorySnapshot get patch-based undo
+    applySnapshot: (patch) => { void applyPatchReverse(patch); },
+
+    clear: () => set({ entries: [] }),
+  }),
 );
 
 /* ─── Auto-capture hook (call from overridesStore after mutations) ─ */

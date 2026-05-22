@@ -357,24 +357,31 @@ function ResetGroup() {
         </button>
       </div>
       <button
-        onClick={() => {
-          if (!confirm("সব রিসেট করবেন? সব ডিফল্ট অবস্থায় ফিরবে।")) return;
-          
-          // 1. Show loading state visually
-          useReflowStore.setState({ buildProgress: { label: "রিসেট হচ্ছে…", pct: 50 } });
-          
-          // 2. Yield to browser so loading screen paints, then process
-          setTimeout(() => {
-            resetAll();
-            rebuild();
-            
-            // 3. Clear history and remove loading state after a tiny delay
-            setTimeout(() => {
-              useOverridesStore.temporal.getState().clear();
-              useHistoryStore.getState().clear();
-              useReflowStore.setState({ buildProgress: null });
-            }, 50);
-          }, 50);
+        onClick={async () => {
+          if (!confirm("সব রিসেট করবেন? সব ডিফল্ট অবস্থায় ফিরবে।")) return;
+
+          // Step 1: Show loading indicator
+          useReflowStore.setState({ buildProgress: { label: "রিসেট হচ্ছে…", pct: 20 } });
+
+          // Step 2: Yield — let browser paint loading state
+          await new Promise<void>((r) => setTimeout(r, 30));
+
+          // Step 3: Reset all overrides to master defaults
+          resetAll();
+          useReflowStore.setState({ buildProgress: { label: "পেজ পুনর্গঠন…", pct: 55 } });
+
+          // Step 4: Yield before rebuild
+          await new Promise<void>((r) => setTimeout(r, 0));
+
+          // Step 5: Async rebuild (updates progress 60→75→100→null internally)
+          rebuild();
+
+          // Step 6: Clear temporal undo stack and session history
+          useOverridesStore.temporal.getState().clear();
+          useHistoryStore.getState().clear();
+
+          // Step 7: Remove any old persisted history from localStorage
+          try { localStorage.removeItem("studio-history-v3"); } catch { /* ignore */ }
         }}
         className="rounded border border-red-900/40 bg-red-900/10 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-900/20 mt-2">
         সব রিসেট করুন
