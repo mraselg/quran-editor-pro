@@ -1,67 +1,81 @@
 ====================================================================
-STUDIO AL-QALAM — HANDOFF DOCUMENT
+STUDIO AL-QALAM — HANDOFF DOCUMENT (সংশোধিত)
 Git Repo: https://github.com/mraselg/quran-editor-pro (branch: master)
-Last verified: 2026-05-23 | TSC: clean (exit 0) | Build: clean (exit 0)
+Last verified: 2026-05-23 | TSC: exit 0 | Build: exit 0
 ====================================================================
 
-COMPLETED (verified in master):
-  Phase 1 — commit 275511f
-    - historyStore: session-only (no persist)
-    - PropertiesPanel: async Reset All with loading states
-    - localStorage old key cleanup on reset
+PHASE STATUS (সঠিক নামকরণ):
 
-  Phase 2 — commit 11473d4
-    - overridesStore: arabicDx/Dy + banglaDx/Dy in LocalOverride
-    - FabricLines: per-layer independent offsets applied in FabricRow
-    - PropertiesPanel: Arabic X/Y and Bangla X/Y inputs in RowDetailSection
+  ✅ Phase 1 (commit 275511f)
+     - historyStore: session-only (no persist across page refresh)
+     - PropertiesPanel: async Reset All with proper loading states
+     - localStorage: old history key cleanup on reset
 
-  TSC Fix — commit 8b037e7
-    - dal.electron.ts: api() null-guard for window.electronAPI
-    - tsc --noEmit now exits 0
+  ✅ Phase 2 (commit 11473d4)
+     - overridesStore: arabicDx/Dy + banglaDx/Dy fields added
+     - FabricLines: per-layer independent offsets in FabricRow transform
+     - PropertiesPanel: Arabic X/Y and Bangla X/Y inputs in RowDetailSection
 
-NOT STARTED (for Lovable agent):
-  Phase 3A — backFillFrom()
-  Phase 3B — Smart Enter + LargeChangeGuard + ScopeImpactWarningDialog
+  ✅ TSC Fix (commit 8b037e7)
+     - dal.electron.ts: api() null-guard → tsc --noEmit exits 0
+
+  ✅ Phase 3A — Chunked Page Building
+     - ALREADY DONE in reflowStore.ts (rebuild() uses async/yield pattern)
+     - rebuildPage() uses requestIdleCallback
+     - 400ms debounce on override changes
+     - No new work needed here.
+
+  ❌ Phase 3B — Custom Tajweed Icon Font (.woff2)
+     - Replace inline SVG tajweed symbols with woff2 font
+     - Create: src/lib/fontCharMap.ts (Unicode PUA mapping)
+     - Update: TopSymbolLayer.tsx (use font chars instead of SVGs)
+     - Add @font-face in CSS
+
+  ❌ Phase 3C — SQLite Migration (Electron DAL)
+     - Verify: electron/main.cjs IPC handlers
+     - Verify: scripts/build-sqlite.cjs converter
+     - Verify: src/data/dal.ts pickDAL() Electron detection
+     - NOTE: Electron-only. Web build must stay working.
+
+  ❌ Phase 4A — backFillFrom() (delete → auto back-fill)
+     - Add backFillFrom() to src/lib/textReflow.ts
+     - Integrate into FabricLines.tsx checkOverflow()
+     - When row has space after delete → pull words from next row
+
+  ❌ Phase 4B — Smart Enter + Warning Dialog + Large Change Guard
+     - NEW: src/hooks/useLargeChangeGuard.ts
+     - NEW: src/components/studio/ScopeImpactWarningDialog.tsx
+     - MODIFY: FabricLines.tsx handleKeyDown Enter key
+     - scope=general → push to row+1 only
+     - scope=page → cascade to page end, guard if rows >= 20
+     - scope=surah/global → ALWAYS show warning dialog first
 
 ====================================================================
-CHECKER ROLE (Antigravity agent):
+CHECKER ROLE (Antigravity / this agent):
   - Run: npx tsc --noEmit (must stay exit 0)
   - Run: npm run build (must stay exit 0)
-  - Fix TypeScript errors only
-  - Create roadmap plans for Lovable agent — DO NOT implement features
+  - Fix TypeScript + build errors ONLY
+  - Write roadmap/plans for Lovable agent — do NOT implement features
 
 IMPLEMENTER ROLE (Lovable agent):
-  - Implement Phase 3A first, then 3B
-  - Follow behavior contract below
-  - git push after each phase
+  - Implement phases in order: 3B → 3C → 4A → 4B
+  - Follow behavior contracts in agent_roadmap_corrected.md
+  - git add -A && git commit && git push after each phase
 
 ====================================================================
-PHASE 3 BEHAVIOR CONTRACT:
+PHASE 4B BEHAVIOR CONTRACT (most important):
 
-  3A: backFillFrom()
-      File: src/lib/textReflow.ts (add after reflowFrom)
-      File: src/components/studio/FabricLines.tsx (checkOverflow integration)
-      Rule: When delete leaves space > fontSize*0.8 → pull words from next row
-      Rule: Respects maxPageId boundary (scope-limited)
+  scope=general  → split at cursor, push tail to row+1 only
+  scope=page     → cascade to page end; dialog if rows >= 20
+  scope=surah    → dialog ALWAYS
+  scope=global   → dialog ALWAYS
 
-  3B: Smart Enter
-      scope=general  → push tail to row+1 only, no guard
-      scope=page     → cascade to page end, guard if rows >= 20
-      scope=surah    → ALWAYS show warning dialog first
-      scope=global   → ALWAYS show warning dialog first
-
-  Bengali strings (MUST NOT change):
-      SCOPE_LABEL_BN = { general:"সাধারণ", page:"পেজ", surah:"সূরা", global:"সকল" }
-      Dialog buttons: "না" | "হ্যাঁ, চালিয়ে যান"
-
-  New files to create:
-      src/hooks/useLargeChangeGuard.ts
-      src/components/studio/ScopeImpactWarningDialog.tsx
+  Bengali strings (EXACT, do not translate differently):
+    SCOPE_LABEL_BN = { general:"সাধারণ", page:"পেজ", surah:"সূরা", global:"সকল" }
+    Dialog buttons: "না" | "হ্যাঁ, চালিয়ে যান"
 
 ====================================================================
-PHASE 4 IDEAS (after Phase 3 done — pick one):
-  A) Keyboard shortcuts: Alt+1/2/3/4 → scope switch
-  B) Persist scope per-surah in localStorage
-  C) Batch buildProgress updates (throttle with rAF for large globals)
-  D) Scope-tagged Undo/Redo (historyStore already has scope field)
+NEXT AGENT START COMMAND:
+  "Read CONTINUE_PROMPT.txt from https://github.com/mraselg/quran-editor-pro
+   then implement Phase 3B (Tajweed Icon Font) as described."
 ====================================================================
