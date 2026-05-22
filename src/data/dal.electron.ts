@@ -18,29 +18,37 @@ import type { QuranDAL } from "./dal";
 import type { PageData } from "./pages";
 import type { Verse as FlowVerse } from "@/lib/quranLayout";
 
+/** Throws if called outside Electron — should never happen because pickDAL()
+ *  only selects ElectronDAL when window.electronAPI is defined. */
+function api() {
+  const eApi = window.electronAPI;
+  if (!eApi) throw new Error("[ElectronDAL] window.electronAPI is not available");
+  return eApi;
+}
+
 export class ElectronDAL implements QuranDAL {
   async loadVerses(surah?: number): Promise<FlowVerse[]> {
     console.log("[ElectronDAL] loadVerses", surah ?? "all");
-    const result = await window.electronAPI.getVerses(surah);
+    const result = await api().getVerses(surah);
     return result as FlowVerse[];
   }
 
   async getPage(pageId: string): Promise<PageData | null> {
     console.log("[ElectronDAL] getPage", pageId);
-    return window.electronAPI.getPage(pageId);
+    return api().getPage(pageId);
   }
 
   async getPageRange(fromPageNo: number, toPageNo: number): Promise<PageData[]> {
     console.log("[ElectronDAL] getPageRange", fromPageNo, "–", toPageNo);
-    return window.electronAPI.getPageRange(fromPageNo, toPageNo);
+    return api().getPageRange(fromPageNo, toPageNo);
   }
 
   async getSurahPages(surahNo: number): Promise<PageData[]> {
     console.log("[ElectronDAL] getSurahPages", surahNo);
-    return window.electronAPI.getSurahPages(surahNo);
+    return api().getSurahPages(surahNo);
   }
 
   async getTotalPages(): Promise<number> {
-    return window.electronAPI.getTotalPages();
+    return api().getTotalPages();
   }
 }
