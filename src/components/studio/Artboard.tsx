@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useFont } from "@/context/FontContext";
 import type { PageData } from "@/data/pages";
 import { useEditorStore, type Selection } from "@/state/editorStore";
@@ -125,16 +125,20 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
   const selColor = SCOPE_COLORS[scope] ?? "#f59e0b";
   const showPageHighlight = editMode && selection && scope !== "general";
 
-  // Re-measure overlay rects after layout (also on selection / overrides change)
-  useEffect(() => {
+  // Re-measure overlay rects — runs after CSS transform has been composited.
+  // We use useLayoutEffect + two rAF frames so the browser fully applies any
+  // zoom-level CSS transform BEFORE we call getBoundingClientRect().
+  // Without the rAF delay, rapid zoom changes leave stale rect measurements.
+  useLayoutEffect(() => {
     const board = boardRef.current;
     if (!board) return;
 
-    // zoom prop is a percentage (e.g. 85 = 85%). The board's outer wrapper applies
-    // CSS transform scale(zoom/100), so getBoundingClientRect() returns SCALED coords.
-    // To get unscaled board-relative coords for absolutely-positioned overlays,
-    // we must divide by the scale factor.
-    const scale = zoom / 100;
+    // `zoom` prop is a FRACTIONAL scale factor (e.g. 0.85 for 85%).
+    // Workspace.tsx passes zoom={zoomPercent / 100} to Artboard.
+    // The outer wrapper applies CSS transform scale(zoom), so
+    // getBoundingClientRect() returns coords multiplied by `zoom`.
+    // We divide by zoom to recover unscaled board-relative coords.
+    const scale = zoom;
 
     const measure = (key: string | undefined) => {
       if (!key) return null;
@@ -143,7 +147,7 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
       const br = board.getBoundingClientRect();
       let r = el.getBoundingClientRect();
 
-      // For a row, include the visually shifted bounds of its children (Symbol, Arabic, Bangla layers)
+      // For a row, expand bounds to cover shifted child layers (Symbol, Arabic, Bangla)
       if (el.getAttribute("data-sel-kind") === "row") {
         const children = Array.from(el.children) as HTMLElement[];
         if (children.length > 0) {
@@ -160,9 +164,7 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
         }
       }
 
-      // getBoundingClientRect gives scaled viewport coords.
-      // Subtract board origin → scaled board-relative coords.
-      // Then divide by scale → unscaled board coords (for position: absolute children).
+      // Subtract board origin → scaled coords; divide by scale → unscaled.
       return new DOMRect(
         (r.left - br.left) / scale,
         (r.top - br.top) / scale,
@@ -170,8 +172,22 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
         r.height / scale,
       );
     };
-    setSelRect(measure(selection?.key));
-    setHoverRect(measure(hover?.key));
+
+    // Double rAF: first frame commits layout, second frame reads stable rect.
+    let raf1: number;
+    let raf2: number;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        setSelRect(measure(selection?.key));
+        setHoverRect(measure(hover?.key));
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      raf2 && cancelAnimationFrame(raf2);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection, hover, page, selOverride, hoverOverride, zoom]);
 
   // Read which selectable element was clicked
