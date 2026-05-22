@@ -1,7 +1,5 @@
 import { ChevronDown, FileText, Search } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { FixedSizeList } from "react-window";
-import type { ListChildComponentProps } from "react-window";
 import { useReflowStore } from "@/state/reflowStore";
 import type { PageDistribution } from "@/state/reflowStore";
 
@@ -31,7 +29,7 @@ function bnNum(n: number | string): string {
 /** Height of each page list item — fixed for react-window FixedSizeList */
 const ITEM_HEIGHT = 52;
 
-/** Virtualized page list item — extracted for react-window row renderer */
+/** Virtualized page list item */
 type ItemData = {
   filtered: PageDistribution[];
   distribution: PageDistribution[];
@@ -43,7 +41,7 @@ function PageListItem({
   index,
   style,
   data,
-}: ListChildComponentProps<ItemData>) {
+}: { index: number; style?: React.CSSProperties; data: ItemData }) {
   const { filtered, distribution, activeId, onSelect } = data;
   const d = filtered[index];
   if (!d) return null;
@@ -117,13 +115,15 @@ export function PageList({ activeId, onSelect }: Props) {
   const activeData = distribution[activeIdx];
 
   // Scroll the virtualized list to active item when activeId changes.
-  const listRef = useRef<FixedSizeList>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const prevActiveRef = useRef<string>("");
+  // Scroll to active item when activeId changes
   if (activeId !== prevActiveRef.current) {
     prevActiveRef.current = activeId;
     const activeFilteredIdx = filtered.findIndex((d) => d.pageId === activeId);
-    if (activeFilteredIdx >= 0) {
-      listRef.current?.scrollToItem(activeFilteredIdx, "smart");
+    if (activeFilteredIdx >= 0 && listRef.current) {
+      const scrollTop = activeFilteredIdx * ITEM_HEIGHT;
+      listRef.current.scrollTop = scrollTop;
     }
   }
 
@@ -242,25 +242,26 @@ export function PageList({ activeId, onSelect }: Props) {
         </div>
       </div>
 
-      {/* Virtualized Page List — only renders visible items + small overscan */}
+      {/* Scrollable Page List */}
       <div ref={listContainerRef} className="flex-1 overflow-hidden">
         {filtered.length === 0 ? (
           <div className="px-4 py-6 text-center text-[11px] text-neutral-600">
             কোনো পেজ পাওয়া যায়নি
           </div>
         ) : (
-          <FixedSizeList
+          <div
             ref={listRef}
-            height={listHeight}
-            itemCount={filtered.length}
-            itemSize={ITEM_HEIGHT}
-            width="100%"
-            itemData={itemData}
-            overscanCount={3}
-            className="scrollbar-thin"
+            className="scrollbar-thin overflow-y-auto h-full"
+            style={{ height: listHeight }}
           >
-            {PageListItem}
-          </FixedSizeList>
+            {filtered.map((_, idx) => (
+              <PageListItem
+                key={filtered[idx]?.pageId ?? idx}
+                index={idx}
+                data={itemData}
+              />
+            ))}
+          </div>
         )}
       </div>
     </aside>
