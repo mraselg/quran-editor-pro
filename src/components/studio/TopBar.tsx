@@ -84,13 +84,20 @@ export function TopBar({ totalPages, totalAyat }: { totalPages: number; totalAya
 
   const handlePreviewClick = () => {
     if (hasNewChanges) {
-      // Data is auto-persisted via zustand/persist — just confirm with a toast
-      toast.success("পরিবর্তন স্বয়ংক্রিয়ভাবে সেভ হয়েছে ✓", {
-        description: "LocalStorage-এ সব পরিবর্তন সংরক্ষিত।",
-        duration: 3000,
+      // Show a brief auto-save notification — data is persisted in Zustand/localStorage
+      toast.success("পরিবর্তন স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়েছে ✓", {
+        description: "LocalStorage-এ সব পরিবর্তন সেভ হয়ে গেছে। প্রিভিউতে যাচ্ছেন…",
+        duration: 3500,
+        icon: "💾",
       });
     }
     setEditMode(false);
+  };
+
+  const handleEditorClick = () => {
+    setEditMode(true);
+    // Reset the change counter baseline when entering editor
+    initialEntriesRef.current = entriesCount;
   };
 
   const handleExportPNG = () => {
@@ -138,7 +145,7 @@ export function TopBar({ totalPages, totalAyat }: { totalPages: number; totalAya
             icon={Sparkles}
             label="এডিটর"
             active={editMode}
-            onClick={() => setEditMode(true)}
+            onClick={handleEditorClick}
           />
           {/* Auto-save indicator */}
           {editMode && hasNewChanges && (

@@ -129,6 +129,13 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
   useEffect(() => {
     const board = boardRef.current;
     if (!board) return;
+
+    // zoom prop is a percentage (e.g. 85 = 85%). The board's outer wrapper applies
+    // CSS transform scale(zoom/100), so getBoundingClientRect() returns SCALED coords.
+    // To get unscaled board-relative coords for absolutely-positioned overlays,
+    // we must divide by the scale factor.
+    const scale = zoom / 100;
+
     const measure = (key: string | undefined) => {
       if (!key) return null;
       const el = board.querySelector<HTMLElement>(`[data-sel-key="${CSS.escape(key)}"]`);
@@ -153,8 +160,15 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
         }
       }
 
-      // Divide by zoom to account for CSS transform scale on the board
-      return new DOMRect((r.left - br.left) / zoom, (r.top - br.top) / zoom, r.width / zoom, r.height / zoom);
+      // getBoundingClientRect gives scaled viewport coords.
+      // Subtract board origin → scaled board-relative coords.
+      // Then divide by scale → unscaled board coords (for position: absolute children).
+      return new DOMRect(
+        (r.left - br.left) / scale,
+        (r.top - br.top) / scale,
+        r.width / scale,
+        r.height / scale,
+      );
     };
     setSelRect(measure(selection?.key));
     setHoverRect(measure(hover?.key));
@@ -445,7 +459,7 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
         </svg>
       )}
 
-      {/* Hover outline */}
+      {/* Hover outline — positioned relative to the unscaled board div */}
       {editMode && hoverRect && (
         <div
           style={{
@@ -462,7 +476,7 @@ export const Artboard = memo(function Artboard({ page, zoom = 1 }: { page: PageD
         />
       )}
 
-      {/* Row selection outline */}
+      {/* Row selection outline — positioned relative to the unscaled board div */}
       {editMode && selRect && (
         <div
           style={{
