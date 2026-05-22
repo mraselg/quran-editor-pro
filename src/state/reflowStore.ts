@@ -172,14 +172,16 @@ export const useReflowStore = create<ReflowState>((set, get) => ({
   },
 
   /**
-   * Full rebuild — splits work across multiple `requestIdleCallback` frames
+   * Full rebuild — splits work across multiple animation frames
    * so the main thread stays responsive and sliders don't freeze.
    *
    * Strategy:
    * 1. Compute new signature. If unchanged → skip.
-   * 2. Kick off chunked idle processing.
-   * 3. Each idle callback processes ~60 pages before yielding.
-   * 4. When all chunks are done → commit to state.
+   * 2. Call buildAllPages() in one shot but show progress before/after.
+   * 3. When done → commit to state in a single setState call.
+   *
+   * For very large corpora, the build itself takes ~10-50ms which is
+   * imperceptible. We show progress to give visual feedback.
    */
   rebuild: () => {
     const g = useOverridesStore.getState().global;
@@ -190,36 +192,41 @@ export const useReflowStore = create<ReflowState>((set, get) => ({
     };
     const sig = computeSignature();
 
-    // Mark as rebuilding so UI can show a subtle spinner
-    set({ rebuilding: true });
+    set({ rebuilding: true, buildProgress: { label: "পেজ পুনর্নির্মাণ…", pct: 60 } });
 
-    // Use requestIdleCallback when available, otherwise fall back to setTimeout(0)
-    const scheduleIdle =
-      typeof requestIdleCallback !== "undefined"
-        ? (cb: IdleRequestCallback) => requestIdleCallback(cb, { timeout: 500 })
-        : (cb: IdleRequestCallback) =>
-            setTimeout(
-              () => cb({ timeRemaining: () => 50, didTimeout: false } as IdleDeadline),
-              0,
-            );
+    // Schedule the actual build after one frame so the progress bar renders first
+    const buildAsync = async () => {
+      // Yield to the browser so the progress UI can paint
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-    // Run the full buildAllPages synchronously inside an idle callback
-    // (it's ~1-3ms for typical corpus sizes, acceptable in an idle slot)
-    scheduleIdle(() => {
-      // If signature changed again while we were waiting, skip this stale rebuild
+      // If signature changed while we were yielding, skip this stale rebuild
       if (sig !== computeSignature()) {
-        set({ rebuilding: false });
+        set({ rebuilding: false, buildProgress: null });
         return;
       }
 
+      set({ buildProgress: { label: "পেজ তৈরি হচ্ছে…", pct: 75 } });
+
+      // Yield once more before the heavy sync work
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
       const pages = buildAllPages(opts);
+
+      set({ buildProgress: { label: "সম্পন্ন!", pct: 100 } });
+
+      // One final yield so the 100% renders before we clear
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
       set({
         pages,
         distribution: computeDistribution(pages),
         signature: sig,
         rebuilding: false,
+        buildProgress: null,
       });
-    });
+    };
+
+    void buildAsync();
   },
 }));
 
