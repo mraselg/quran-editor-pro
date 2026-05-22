@@ -26,6 +26,12 @@ export type LocalOverride = {
   align?: "left" | "center" | "right" | "justify";
   /** User-edited text content override */
   text?: string;
+  /** Independent per-layer movement (Arabic layer only) */
+  arabicDx?: number;
+  arabicDy?: number;
+  /** Independent per-layer movement (Bangla layer only) */
+  banglaDx?: number;
+  banglaDy?: number;
 };
 
 /** Stable keys — logical (verse-based) for words/symbols, page-bound for rows.

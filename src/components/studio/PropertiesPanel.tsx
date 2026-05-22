@@ -186,7 +186,27 @@ function RowDetailSection({ color, selection }: { color: string; selection: impo
           onReset={local?.dy !== undefined ? () => apply({ dy: undefined }) : undefined}
           color={color} />
       </div>
-      <button onClick={() => apply({ dx: undefined, dy: undefined, fontPx: undefined, scale: undefined })}
+      <div className="grid grid-cols-2 gap-3 mt-3">
+        <InlineField label="আরবি X" value={local?.arabicDx ?? 0} min={-100} max={100}
+          onChange={(v) => apply({ arabicDx: v || undefined })}
+          onReset={local?.arabicDx !== undefined ? () => apply({ arabicDx: undefined }) : undefined}
+          color={color} />
+        <InlineField label="আরবি Y" value={local?.arabicDy ?? 0} min={-100} max={100}
+          onChange={(v) => apply({ arabicDy: v || undefined })}
+          onReset={local?.arabicDy !== undefined ? () => apply({ arabicDy: undefined }) : undefined}
+          color={color} />
+      </div>
+      <div className="grid grid-cols-2 gap-3 mt-1">
+        <InlineField label="বাংলা X" value={local?.banglaDx ?? 0} min={-100} max={100}
+          onChange={(v) => apply({ banglaDx: v || undefined })}
+          onReset={local?.banglaDx !== undefined ? () => apply({ banglaDx: undefined }) : undefined}
+          color={color} />
+        <InlineField label="বাংলা Y" value={local?.banglaDy ?? 0} min={-100} max={100}
+          onChange={(v) => apply({ banglaDy: v || undefined })}
+          onReset={local?.banglaDy !== undefined ? () => apply({ banglaDy: undefined }) : undefined}
+          color={color} />
+      </div>
+      <button onClick={() => apply({ dx: undefined, dy: undefined, fontPx: undefined, scale: undefined, arabicDx: undefined, arabicDy: undefined, banglaDx: undefined, banglaDy: undefined })}
         className="mt-1 rounded border border-neutral-700 bg-neutral-800 py-1.5 text-[10px] font-semibold text-neutral-400 hover:bg-red-900/20 hover:text-red-400 transition-colors">
         এই সারি রিসেট করুন
       </button>

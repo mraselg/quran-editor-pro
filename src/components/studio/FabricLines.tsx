@@ -179,8 +179,9 @@ const FabricRow = memo(function FabricRow({
     focusedRowKey === lkSy;
 
   // Arabic layer
-  const aDx = aOv?.dx ?? 0;
-  const aDy = aOv?.dy ?? 0;
+  // aDx/aDy: layer-specific override + per-row independent arabic offset
+  const aDx = (aOv?.dx ?? 0) + (rOv?.arabicDx ?? 0);
+  const aDy = (aOv?.dy ?? 0) + (rOv?.arabicDy ?? 0);
   const aFontPx = aOv?.fontPx ?? rowFontPx;
   const aLeading = aOv?.leading ?? 1;
   const aTracking = aOv?.tracking ?? 0;
@@ -192,6 +193,9 @@ const FabricRow = memo(function FabricRow({
   const isArabicEditing = isTypeTool && selectionKey === aLk && selectionPageId === pageId;
 
   // Bangla layer
+  // bDx/bDy: layer-specific override + per-row independent bangla offset
+  const bDx = (bOv?.dx ?? 0) + (rOv?.banglaDx ?? 0);
+  const bDy = (bOv?.dy ?? 0) + (rOv?.banglaDy ?? 0);
   const bFontPx = bOv?.fontPx ?? gBangla;
   const bLeading = bOv?.leading ?? 1.1;
   const bTracking = bOv?.tracking ?? 0;
@@ -345,7 +349,7 @@ const FabricRow = memo(function FabricRow({
           textAlign: bAlign,
           textAlignLast: bAlign === "justify" ? "justify" : undefined,
           whiteSpace: "normal",
-          transform: `translateY(${gBanglaY + bBaseline}px) scaleX(${bHScale}) scaleY(${bVScale})`,
+          transform: `translate(${bDx}px, ${gBanglaY + bBaseline + bDy}px) scaleX(${bHScale}) scaleY(${bVScale})`,
           transformOrigin: "top left",
           zIndex: 10,
           pointerEvents: isTypeTool ? "auto" : "none",
